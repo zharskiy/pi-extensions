@@ -589,7 +589,7 @@ export const invalidText = (read: InvalidRead) =>
       }
     : {
         problem: "has a problem this setup does not fix",
-        fix: read.hint ?? "fix that key, then run pinata init again",
+        fix: "fix that key, then run pinata init again",
       };
 
 export const invalidLines = (read: InvalidRead, file: string, home: string) => {

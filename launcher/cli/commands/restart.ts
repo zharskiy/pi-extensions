@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { removeBuildLeftovers } from "../../image/index.ts";
-import { errorMessage, knownRepos, LauncherError, stateLayout } from "../../shared/index.ts";
+import { errorMessage, LauncherError, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, pathsOf } from "../deps.ts";
 import { refuseBusy } from "../pinata/host.ts";
 import { removeSandbox } from "../pinata/uninstall.ts";
@@ -12,8 +12,7 @@ import { acceptAll } from "./init.ts";
 
 const forgetVm = (stateDir: string) => async () => {
   const layout = stateLayout(stateDir);
-  const legacy = (await knownRepos(stateDir)).map((hash) => layout.repo(hash).legacy.sync);
-  const records = [layout.render, layout.renders, layout.sync.directory, layout.imageRecord, ...legacy];
+  const records = [layout.render, layout.sync.directory, layout.imageRecord];
 
   await Promise.all(records.map((path) => rm(path, { recursive: true, force: true })));
 

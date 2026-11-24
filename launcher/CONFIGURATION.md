@@ -96,7 +96,17 @@ The sandbox reaches a host only when one of these lists names it:
 
 `egress.deny` wins over all of them, `pi.dev` included.
 
-No package registry is allowed by default: list the ones you use, such as `registry.npmjs.org`, `pypi.org` and `files.pythonhosted.org`, or `github.com` and `codeload.github.com`, in `egress.allow`.
+No package registry is allowed by default: list the ones you use, such as `registry.npmjs.org`, `pypi.org` and `files.pythonhosted.org`, or `github.com` and `codeload.github.com`, in `egress.allow`. The hosts of common registries:
+
+| Registry | Hosts |
+| --- | --- |
+| npm | `registry.npmjs.org`, `registry.yarnpkg.com`, `repo.yarnpkg.com` |
+| PyPI | `pypi.org`, `files.pythonhosted.org` |
+| GitHub | `github.com`, `codeload.github.com`, `objects.githubusercontent.com`, `raw.githubusercontent.com`, `release-assets.githubusercontent.com` |
+| Maven | `repo.maven.apache.org`, `repo1.maven.org` |
+| Gradle | `plugins.gradle.org`, `plugins-artifacts.gradle.org`, `services.gradle.org`, `downloads.gradle.org` |
+| Go | `proxy.golang.org`, `sum.golang.org` |
+| Cargo | `crates.io`, `index.crates.io`, `static.crates.io` |
 
 ### Allow, deny and private hosts
 
@@ -157,7 +167,7 @@ Any other case prints the proxy's own reason.
 
 ## Image
 
-The sandbox image is Debian bookworm with Node 24, git, search tools, curl, jq, python3 and glab. There is no GitHub CLI: [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md#the-github-cli) shows how to add `gh` and its token. It installs the same pi version as your host pi, from npm. When host pi changes version, the next launch rebuilds the image.
+The sandbox image is Debian bookworm with Node 24, git, search tools, curl, jq, python3 and glab. There is no GitHub CLI: [The GitHub CLI](#the-github-cli) shows how to add `gh` and its token. It installs the same pi version as your host pi, from npm. When host pi changes version, the next launch rebuilds the image.
 
 These keys add one layer on top of that image:
 
@@ -437,8 +447,6 @@ The VM's shares follow the config of whichever agent dir launches pi, since ever
 
 `pinata init` chooses the root with you and applies it to the VM at once, restarting it when no pi session runs. In a script, or on a machine without a terminal, set `PINATA_ROOT` and run `pinata init --yes` (or `pinata install`, which does): it writes the root into a config without `workspaceRoot`, stops when the config names another root, and stops when neither the config nor `PINATA_ROOT` names one (see [Set up the sandbox](README.md#set-up-the-sandbox)).
 
-The key replaced `workspaceRoots: { "roots": [...] }` and the mode that shared your whole home; see [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md#several-workspace-roots-and-the-home-share).
-
 ## Variables passed into the sandbox
 
 `env.allow` names the variables of your shell that reach each pi run. The default list is `TERM`, `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `LC_TERMINAL`, `LC_TERMINAL_VERSION` and `COLORFGBG`. Your entries only extend it: the list cannot shrink, and `pinata config` shows its source as `default+config`.
@@ -671,9 +679,53 @@ A bind is read-only, and a volume starts empty. To get a writable copy of a fold
 
 The marker is written last, so a copy stopped half-way runs again at the next launch. Every session, in any folder, shares the one copy, so a change made in one folder shows in the others. Delete the marker inside the sandbox to copy again.
 
+### Shared package caches
+
+Package caches in user volumes outlive each session and are shared by all your sandboxes, so an install in one repository reuses what another one downloaded:
+
+```json
+{ "mounts": { "volumes": ["~/.npm", "~/.cache/pip"] } }
+```
+
+The volumes start empty and never use your Mac's folders. Every sandbox can write to them, so keep them to package caches. See [Volumes](#volumes).
+
+### The GitHub CLI
+
+The image has no `gh`, and pinata reads no gh config. Plain git over HTTPS to github.com has no credential in the sandbox: a clone of a public repository works once `github.com` is reachable, a push or a private clone fails, since `GIT_TERMINAL_PROMPT` is `0` and git cannot ask. An SSH remote fails too, since the sandbox has no SSH keys.
+
+This config gives gh and git over HTTPS for github.com: the `gh` package from Debian's own sources, `GH_TOKEN` set to a placeholder, one credential rule per host (`github.com`, `api.github.com` and `uploads.github.com`) sharing that placeholder, whose secret is `gh auth token --hostname github.com` on your Mac, and git's credential helper and HTTPS rewrites set from `setup`. Use your own placeholder: `pinata-` and 24 lowercase hex digits, such as `pinata-` followed by the output of `openssl rand -hex 12`. `pinata doctor` reports a `GH_TOKEN` of any other shape as a value that is not a placeholder. Replace `/opt/homebrew/bin/gh` with what `command -v gh` prints on your Mac. The command runs on your Mac with a short list of variables, so give an absolute path.
+
+```json
+{
+  "image": { "packages": ["gh"] },
+  "env": { "set": { "GH_TOKEN": "pinata-6a1f0c2e9b7d4a3851e0f2c4" } },
+  "credentials": {
+    "rules": [
+      { "id": "github", "host": "github.com", "placeholder": "pinata-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } },
+      { "id": "github-api", "host": "api.github.com", "placeholder": "pinata-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } },
+      { "id": "github-uploads", "host": "uploads.github.com", "placeholder": "pinata-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } }
+    ]
+  },
+  "setup": [
+    ["git", "config", "--global", "credential.https://github.com.helper", "!gh auth git-credential"],
+    ["git", "config", "--global", "--add", "url.https://github.com/.insteadOf", "git@github.com:"],
+    ["git", "config", "--global", "--add", "url.https://github.com/.insteadOf", "ssh://git@github.com/"]
+  ]
+}
+```
+
+- `gh` reads `GH_TOKEN` inside and sends the placeholder; `gh auth git-credential` gives git the user `x-access-token` and the same placeholder; the proxy puts the real token in its place on the hosts the rules name. A rule also makes its host reachable.
+- `setup` runs at every launch, after the home is in place, so the lines land in that launch's `~/.gitconfig`. It replaces nothing the rendered config sets.
+- For git alone, without `gh` in the image, use the helper `!f() { echo username=x-access-token; echo password=pinata-6a1f0c2e9b7d4a3851e0f2c4; }; f` instead, and leave out `image.packages` and `GH_TOKEN`.
+- Archives and release downloads go through other hosts, such as `codeload.github.com` and `objects.githubusercontent.com`; list them in `egress.allow` if you need them.
+- For a gh config folder other than the default, put it in the rule's command, as `["/usr/bin/env", "GH_CONFIG_DIR=<folder>", "<gh>", …]`.
+- For a GitHub Enterprise host, add rules for it (and for `api.<host>` on `.ghe.com`) with its own placeholder and `--hostname <host>`, the `setup` lines with its name, and `GH_HOST` or `GH_ENTERPRISE_TOKEN` in `env.set`. `GH_ENTERPRISE_TOKEN` is one value for every enterprise host, so two enterprise hosts with different tokens need a `hosts.yml` inside, written from `setup` (`sh -c` with a `printf` into `~/.config/gh/hosts.yml`), with each host's placeholder.
+
+The config names your gh hosts and your gh binary itself, so a config shared by a team needs gh at the same path on every Mac. Pinata does not check where that gh lies; an absolute path outside your projects keeps a sandbox from changing it.
+
 ### Git remotes with SSH URLs
 
-The sandbox has no SSH keys. The rendered git config already rewrites `git@<host>:` and `ssh://git@<host>/` to HTTPS for your glab hosts. For another host, github.com among them ([REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md#the-github-cli)), rewrite with git's own variables in `env.set`, and give the proxy the credential:
+The sandbox has no SSH keys. The rendered git config already rewrites `git@<host>:` and `ssh://git@<host>/` to HTTPS for your glab hosts. For another host, github.com among them ([the GitHub CLI](#the-github-cli)), rewrite with git's own variables in `env.set`, and give the proxy the credential:
 
 ```json
 {
@@ -763,10 +815,6 @@ The image has one Node and one Python. For more:
 - Add Debian packages with `image.packages`, such as `chromium` for a headless browser, or install with `image.dockerfile`. Everything in the image is the same for every repository.
 - Keep a version manager's install folder in a user volume, such as `"~/.local/share/mise"`, so versions are downloaded once for all repositories, and list the hosts it downloads from in `egress.allow`.
 - Give the browser room with `resources.shmMiB`, such as `1024`, and `resources.memoryGiB`.
-
-## Removed keys and defaults
-
-[REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md) lists each removed default and key, how to get it back, and what to do when you update pinata.
 
 ## Environment variables pinata reads
 

@@ -391,21 +391,6 @@ describe("pinata init --yes", () => {
     expect(harness.applied).toEqual([]);
   });
 
-  it("refuses a config that still sets workspaceRoots, naming its replacement, and rewrites nothing", async () => {
-    const harness = await initSetup();
-
-    await harness.writeJson(harness.userConfigFile, { workspaceRoots: { roots: ["~/work"] } });
-
-    const text = await readFile(harness.userConfigFile, "utf8");
-
-    expect(await runPinata(["init", "--yes"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toBe(
-      `pinata: ${harness.userConfigFile} has a problem this setup does not fix: config: workspaceRoots is not a known key\n  hint: workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pinata init\n`,
-    );
-    expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
-    expect(harness.applied).toEqual([]);
-  });
-
   it("refuses an invalid owned key as other commands do and rewrites nothing", async () => {
     const configs = [{ vm: { cpus: "4" } }, { writeBack: { enabled: "yes" } }];
     const outcomes = await Promise.all(

@@ -830,21 +830,13 @@ const normalized = (config: UserConfig): UserConfig => {
     : { ...config, mounts: { ...config.mounts, volumes: volumes.map(normalizedVolume) } };
 };
 
-const REPLACED_KEYS: Record<string, string> = {
-  workspaceRoots:
-    'workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pinata init',
-};
-
 export const validateConfig = (value: unknown): UserConfig => {
   const found = problemOf(CONFIG_SPEC, value, "");
 
   if (found !== undefined) {
     const message = found.path === "" ? found.problem : `${found.path} ${found.problem}`;
 
-    throw new LauncherError(
-      `config: ${printable(message)}`,
-      Object.hasOwn(REPLACED_KEYS, found.path) ? REPLACED_KEYS[found.path] : undefined,
-    );
+    throw new LauncherError(`config: ${printable(message)}`);
   }
 
   return normalized(value as UserConfig);

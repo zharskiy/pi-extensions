@@ -1,5 +1,4 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LABELS, type VmInspect } from "../../backend/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
@@ -51,8 +50,6 @@ const sandbox = async (state: VmInspect["state"], apply?: () => Promise<"created
 
 const writeRecords = async (layout: ReturnType<typeof stateLayout>) => {
   await mkdir(layout.render, { recursive: true });
-
-  await mkdir(join(layout.renders, "a".repeat(64)), { recursive: true });
 
   await mkdir(layout.sync.directory, { recursive: true });
 
@@ -119,7 +116,6 @@ describe("pinata restart", () => {
 
     expect(await pinata.run("restart")).toBe(0);
     expect(await exists(layout.render)).toBe(false);
-    expect(await exists(layout.renders)).toBe(false);
     expect(await exists(layout.sync.directory)).toBe(false);
     expect(await exists(layout.buildContext("build-x"))).toBe(false);
     expect(await exists(layout.imageRecord)).toBe(false);

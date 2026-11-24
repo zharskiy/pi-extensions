@@ -17,7 +17,7 @@ const installed = async (global: boolean) => {
 
   await mkdir(join(pinata.shim, ".."), { recursive: true });
 
-  await writeFile(pinata.shim, "#!/bin/sh\nexec node '/x/launcher/bin/pi.js' \"$@\"\n");
+  await symlink("/x/launcher/bin/pi.js", pinata.shim);
 
   await writeFile(zshrc, "alias ll=ls\n\n# pinata begin\nexport PATH=x\n# pinata end\n");
 

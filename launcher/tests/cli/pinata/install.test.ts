@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readlink, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmInspect } from "../../../backend/index.ts";
@@ -125,19 +125,12 @@ describe("pinata install", () => {
     expect(await exists(join(pinata.home, ".zshrc"))).toBe(false);
   });
 
-  it("replaces main's wrapper, and puts back on uninstall the managed link it replaced", async () => {
+  it("puts back on uninstall the managed link it replaced", async () => {
     const pinata = await createPinata();
     const managed = join(pinata.harness.hostAgentDir, "bin", "pi");
     const target = join(pinata.packageDir, "launcher", "bin", "pi-dev.js");
 
     await mkdir(join(pinata.shim, ".."), { recursive: true });
-
-    await writeFile(pinata.shim, "#!/bin/sh\nexec node '/x/launcher/bin/pi-dev.js' \"$@\"\n");
-
-    expect(await pinata.run("install", "--yes")).toBe(0);
-    expect(await readlink(pinata.shim)).toBe(target);
-
-    await rm(pinata.shim);
 
     await symlink(managed, pinata.shim);
 

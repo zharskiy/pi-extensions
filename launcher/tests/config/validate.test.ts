@@ -27,16 +27,6 @@ describe("validateConfig", () => {
     );
   });
 
-  it("names workspaceRoot as the replacement of the removed workspaceRoots key", () => {
-    expect(() => validateConfig({ workspaceRoots: { roots: ["~/work"] } })).toThrow(
-      expect.objectContaining({
-        message: "config: workspaceRoots is not a known key",
-        hint: 'workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pinata init',
-      }),
-    );
-    expect(() => validateConfig({ egres: {} })).toThrow(expect.objectContaining({ hint: undefined }));
-  });
-
   it("escapes control, bidi and line separator characters of the keys and values it echoes", () => {
     expect(configProblem({ "a‮b\u007f\u0085 ": 1 })).toBe(
       "config: a\\u202Eb\\u007F\\u0085\\u2028 is not a known key",
@@ -111,22 +101,6 @@ describe("validateConfig", () => {
       "config: egress.deny[0] must be a host name or host:port",
       "config: egress.deny[0] must be a host name or host:port",
     ]);
-  });
-
-  it("refuses the removed keys", () => {
-    expect(configProblem({ mounts: { cacheVolumes: ["node_modules"] } })).toBe(
-      "config: mounts.cacheVolumes is not a known key",
-    );
-    expect(configProblem({ mounts: { hostCaches: ["maven"] } })).toBe(
-      "config: mounts.hostCaches is not a known key",
-    );
-    expect(configProblem({ mounts: { extraReadOnly: ["/opt"] } })).toBe(
-      "config: mounts.extraReadOnly is not a known key",
-    );
-    expect(configProblem({ workspaceRoots: { roots: ["/srv"] } })).toBe(
-      "config: workspaceRoots is not a known key",
-    );
-    expect(configProblem({ fallback: "host" })).toBe("config: fallback is not a known key");
   });
 
   it("takes an extra CA by sha256 fingerprint, colons and case optional", () => {

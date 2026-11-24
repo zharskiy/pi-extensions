@@ -43,29 +43,15 @@ describe("pinata status", () => {
     expect(lines).toContain("grants: 0 active");
   });
 
-  it("names the shared pi folder and, in one place, what an older launcher left", async () => {
+  it("names the shared pi folder", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
-    const layout = stateLayout(harness.stateDir);
     const agent = agentVolumeName(installIdOf(harness.stateDir));
-    const legacy = `${agent}-0123456789ab`;
-    const renders = layout.repo(sha256Hex(harness.repoRoot)).legacy.render;
 
     await run([], harness.deps);
 
-    await fake.backend.ensureVolume(legacy, {});
-
-    await mkdir(renders, { recursive: true });
-
     expect(await runPinata(["status"], harness.deps)).toBe(0);
-
-    const lines = harness.stdout().split("\n");
-
-    expect(lines).toContain(`pi folder: ${agent}, shared by every folder's sandbox`);
-    expect(lines.filter((line) => line.startsWith("leftover: "))).toEqual([
-      `leftover: volume ${legacy}, left by an older pinata; pinata restart removes it`,
-      `leftover: ${layout.renders}, left by an older pinata; pinata restart removes it`,
-    ]);
+    expect(harness.stdout().split("\n")).toContain(`pi folder: ${agent}, shared by every folder's sandbox`);
   });
 
   it("names a folder that is no repository a folder", async () => {

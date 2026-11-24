@@ -30,7 +30,6 @@ export interface HarnessOptions {
   providerHosts?: Record<string, { hosts: string[]; envVars?: string[] }>;
   denials?: DenialRecord[];
   machine?: CliDeps["machine"];
-  defaultStateDir?: true;
   workspaceRoot?: false | string;
 }
 
@@ -369,8 +368,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const repoRoot = join(root, "repo");
   const cwd = join(repoRoot, "src");
   const hostAgentDir = join(root, "home", ".pi", "agent");
-  const stateDir =
-    options.defaultStateDir === true ? join(hostAgentDir, "pinata", "state") : join(root, "state");
+  const stateDir = join(root, "state");
   const userConfigFile = join(root, "config", "config.json");
 
   const proxyCaPem = join(stateDir, "ca", "ca-cert.pem");
@@ -424,7 +422,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const deps: CliDeps = {
     runner: fake.runner,
     env: {
-      ...(options.defaultStateDir === true ? {} : { PINATA_STATE_DIR: stateDir }),
+      PINATA_STATE_DIR: stateDir,
       PINATA_USER_CONFIG: userConfigFile,
       USER: "dev",
       TERM: "xterm-256color",

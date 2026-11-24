@@ -71,7 +71,7 @@ describe("stateLayout", () => {
     const hidden = [...flat(layout), ...flat(layout.repo("r1"))].filter(inVm);
 
     expect(layout.vm).toBe("/state/vm");
-    expect(hidden.sort()).toEqual(["/state/vm/agent", "/state/vm/render", "/state/vm/render/r1"]);
+    expect(hidden).toEqual(["/state/vm/agent"]);
   });
 
   it("keeps every file of one repository under repos/<repo hash>", () => {
@@ -82,11 +82,6 @@ describe("stateLayout", () => {
       record: "/state/repos/r1/repo.json",
       prepareLock: "/state/locks/prepare-r1.lock",
       created: "/state/repos/r1/created.json",
-      legacy: {
-        render: "/state/vm/render/r1",
-        renderLock: "/state/repos/r1/render.lock",
-        sync: "/state/repos/r1/sync",
-      },
     });
   });
 

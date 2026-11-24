@@ -93,11 +93,6 @@ const repoFiles = (stateDir: string, repoHash: string) => {
     record: join(directory, "repo.json"),
     prepareLock: join(stateDir, "locks", `prepare-${repoHash}.lock`),
     created: join(directory, "created.json"),
-    legacy: {
-      render: join(stateDir, "vm", "render", repoHash),
-      renderLock: join(directory, "render.lock"),
-      sync: join(directory, "sync"),
-    },
   };
 };
 
@@ -117,7 +112,6 @@ export const stateLayout = (stateDir: string) => ({
   repos: join(stateDir, "repos"),
   repo: (repoHash: string) => repoFiles(stateDir, repoHash),
   vm: join(stateDir, "vm"),
-  renders: join(stateDir, "vm", "render"),
   render: join(stateDir, "vm", "agent"),
   renderLock: join(stateDir, "locks", "render.lock"),
   sync: syncFiles(stateDir),
@@ -146,23 +140,5 @@ export const stateLayout = (stateDir: string) => ({
   gcRecord: join(stateDir, "gc.json"),
   replacedPiLink: join(stateDir, "replaced-pi-link"),
 });
-
-const leavesOf = (value: unknown): string[] => {
-  if (typeof value === "string") {
-    return [value];
-  }
-
-  return typeof value === "object" && value !== null ? Object.values(value).flatMap(leavesOf) : [];
-};
-
-export const stateEntries = (stateDir: string, repoHashes: string[]) => {
-  const layout = stateLayout(stateDir);
-
-  return {
-    named: [...leavesOf(layout), ...repoHashes.flatMap((hash) => leavesOf(layout.repo(hash)))],
-    open: [layout.locks, layout.launches, layout.build, layout.providerHostsDir],
-    walked: [layout.repos, layout.renders],
-  };
-};
 
 export const ensureSalt = (stateDir: string) => ensureRandomHexFile(stateLayout(stateDir).salt, SALT_BYTES);

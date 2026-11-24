@@ -13,7 +13,7 @@ import type {
   TerminalSize,
   Vm,
 } from "../../backend/index.ts";
-import { isOlderBuild, LABELS, networkName, relayName } from "../../backend/index.ts";
+import { LABELS, networkName, relayName } from "../../backend/index.ts";
 import { GUEST_PATHS, LauncherError } from "../../shared/index.ts";
 import { fakeUidOf, isFakeScript, runFakeScript } from "./fake-engine.ts";
 
@@ -334,7 +334,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   };
 
   const networks = new Map<string, string>();
-  const foreignNetworks = new Map<string, Record<string, string>>();
+  const foreignNetworks = new Set<string>();
   const removedNetworks = new Set<string>();
   const networkIds = new Map<string, string>();
 
@@ -642,28 +642,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
       return true;
     },
-    listOlderBuildObjects: async () => ({
-      containers: summaries().filter((summary) => isOlderBuild(summary.name, summary.labels)),
-      volumes: [...volumes].filter((name) => isOlderBuild(name, volumeLabels.get(name) ?? {})),
-      networks: [
-        ...[...networks.entries()].map(([name, owner]) => ({
-          name,
-          labels: { [LABELS.managed]: "true", [LABELS.install]: owner },
-        })),
-        ...[...foreignNetworks.entries()].map(([name, labels]) => ({ name, labels })),
-      ]
-        .filter((network) => isOlderBuild(network.name, network.labels))
-        .map((network) => network.name),
-    }),
-    removeNamedNetwork: async (name) => {
-      if (attached(name) || !foreignNetworks.has(name)) {
-        return false;
-      }
-
-      foreignNetworks.delete(name);
-
-      return true;
-    },
     status: async () => ({ socket: "/fake/docker.sock" }),
   });
 
@@ -678,8 +656,8 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     return id;
   };
 
-  const plantForeignNetwork = (name: string, labels: Record<string, string> = {}) => {
-    foreignNetworks.set(name, labels);
+  const plantForeignNetwork = (name: string) => {
+    foreignNetworks.add(name);
   };
 
   const dropNetwork = (name: string) => {

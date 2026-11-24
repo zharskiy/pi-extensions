@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
 import { installIdOf } from "../install.ts";
-import { isOlderBuild, LABELS } from "../labels.ts";
+import { LABELS } from "../labels.ts";
 import type { Backend, ContainerSpec, Detection } from "../types.ts";
 import {
   containerBody,
@@ -88,20 +88,6 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     });
 
     return containers.map(summaryOf);
-  };
-
-  const listOlderBuildObjects = async () => {
-    const [containers, listedVolumes, listedNetworks] = await Promise.all([
-      listContainers({}),
-      volumes.listOlderBuildVolumes(),
-      networks.listOlderBuildNetworks(),
-    ]);
-
-    return {
-      containers: containers.filter((container) => isOlderBuild(container.name, container.labels)),
-      volumes: listedVolumes,
-      networks: listedNetworks,
-    };
   };
 
   const createContainer = async (spec: ContainerSpec) => {
@@ -254,8 +240,6 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     prepareRelay: relay.prepareRelay,
     prepareNetwork: networks.prepareNetwork,
     removeNetwork: networks.removeNetwork,
-    listOlderBuildObjects,
-    removeNamedNetwork: networks.removeNamedNetwork,
     status,
   };
 };

@@ -2,7 +2,7 @@ import { lstat, mkdir, readFile, readlink, realpath, stat } from "node:fs/promis
 import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { VmSpec } from "../../backend/index.ts";
-import { validateConfig, withoutPath } from "../../config/index.ts";
+import { configProblem, withoutPath } from "../../config/index.ts";
 import {
   errorMessage,
   isJsonObject,
@@ -82,18 +82,6 @@ const parsed = (text: string): { value: unknown } | { message: string } => {
   }
 };
 
-const configProblemOf = (value: unknown) => {
-  try {
-    validateConfig(value);
-
-    return undefined;
-  } catch (error) {
-    const hint = error instanceof LauncherError ? error.hint : undefined;
-
-    return { message: errorMessage(error), ...(hint === undefined ? {} : { hint }) };
-  }
-};
-
 export const readDocument = (file: string, text: string | undefined): DocumentRead => {
   if (text === undefined) {
     return { ok: true, document: { file, text, value: {}, indent: DEFAULT_INDENT, newline: true } };
@@ -113,10 +101,10 @@ export const readDocument = (file: string, text: string | undefined): DocumentRe
     return { ok: false, kind: "json", message: "the file holds JSON, but not an object" };
   }
 
-  const problem = configProblemOf(withoutOwned(result.value));
+  const problem = configProblem(withoutOwned(result.value));
 
   if (problem !== undefined) {
-    return { ok: false, kind: "config", ...problem };
+    return { ok: false, kind: "config", message: problem };
   }
 
   const document = {

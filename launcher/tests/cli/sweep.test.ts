@@ -1,8 +1,8 @@
 import { chmod, lstat, mkdir, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Backend, ContainerSpec, ContainerState } from "../../backend/index.ts";
-import { LABELS, networkName } from "../../backend/index.ts";
+import type { Backend } from "../../backend/index.ts";
+import { LABELS } from "../../backend/index.ts";
 import { sweepOrphans } from "../../cli/sweep.ts";
 import { liveLaunches, newLaunchId, readGrants, registerLaunch } from "../../grants/index.ts";
 import {
@@ -13,7 +13,6 @@ import {
   stateLayout,
   writeRepoRecord,
 } from "../../shared/index.ts";
-import { FAKE_INSTALL } from "../support/fake-backend.ts";
 import { tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, sweepNow } from "./harness.ts";
 
@@ -278,121 +277,5 @@ describe("the sweep of what is left in the state dir", () => {
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.containers.has(id)).toBe(false);
     expect(await exists(stateLayout(harness.stateDir).repo(orphan).directory)).toBe(false);
-  });
-});
-
-describe("the daily collection of older builds' engine objects", () => {
-  const MANAGED = { [LABELS.managed]: "true" };
-
-  const OTHER = { [LABELS.managed]: "true", [LABELS.install]: "otherinstall" };
-
-  const plantContainer = (
-    fake: ReturnType<typeof createFakeBackend>,
-    name: string,
-    state: ContainerState,
-    labels: Record<string, string>,
-    attachments: { volume?: string; network?: string } = {},
-  ) => {
-    const mounts =
-      attachments.volume === undefined
-        ? []
-        : [{ kind: "volume" as const, source: attachments.volume, target: "/data", readOnly: false }];
-    const network =
-      attachments.network === undefined ? { kind: "none" } : { kind: "internal", name: attachments.network };
-    const spec = { mounts, network } as unknown as ContainerSpec;
-
-    fake.containers.set(name, { spec, summary: { id: name, name, labels, state, image: "old" } });
-  };
-
-  const plantVolume = (
-    fake: ReturnType<typeof createFakeBackend>,
-    name: string,
-    labels: Record<string, string>,
-  ) => {
-    fake.volumes.add(name);
-
-    fake.volumeLabels.set(name, labels);
-  };
-
-  it("removes a stopped container, its volume and a free network of an older build, and says so", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    plantContainer(fake, "pinata-old-stopped", "stopped", MANAGED, { volume: "pinata-agent-held" });
-
-    plantVolume(fake, "pinata-agent-held", MANAGED);
-
-    fake.plantForeignNetwork("pinata-network-old", MANAGED);
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.containers.has("pinata-old-stopped")).toBe(false);
-    expect(fake.volumes.has("pinata-agent-held")).toBe(false);
-    expect(fake.hasNetwork("pinata-network-old")).toBe(false);
-    expect(harness.stdout()).toContain("removed container pinata-old-stopped\n");
-    expect(harness.stdout()).toContain("removed volume pinata-agent-held\n");
-    expect(harness.stdout()).toContain("removed network pinata-network-old\n");
-  });
-
-  it("keeps an older build's volume that a container it keeps still mounts, without a word", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const current = { [LABELS.managed]: "true", [LABELS.install]: FAKE_INSTALL };
-
-    plantContainer(fake, "pinata-current", "stopped", current, { volume: "pinata-agent-reused" });
-
-    plantVolume(fake, "pinata-agent-reused", MANAGED);
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pinata-agent-reused")).toBe(true);
-    expect(harness.stdout()).not.toContain("removed");
-    expect(harness.stderr()).toBe("");
-  });
-
-  it("keeps a running container of an older build with its volume and network", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    plantContainer(fake, "pinata-old-running", "running", MANAGED, {
-      volume: "pinata-agent-busy",
-      network: "pinata-network-busy",
-    });
-
-    plantVolume(fake, "pinata-agent-busy", MANAGED);
-
-    fake.plantForeignNetwork("pinata-network-busy", MANAGED);
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.containers.has("pinata-old-running")).toBe(true);
-    expect(fake.volumes.has("pinata-agent-busy")).toBe(true);
-    expect(fake.hasNetwork("pinata-network-busy")).toBe(true);
-  });
-
-  it("keeps another install's objects, unmanaged pinata objects and older builds' shared volumes", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    plantVolume(fake, "pinata-agent-other", OTHER);
-
-    plantContainer(fake, "pinata-other", "stopped", OTHER);
-
-    await fake.backendFor("otherinstall").prepareNetwork();
-
-    plantVolume(fake, "pinata-scratch", {});
-
-    plantContainer(fake, "pinata-mine", "stopped", {});
-
-    fake.plantForeignNetwork("pinata-net", {});
-
-    plantVolume(fake, "pinata-shared-oldinstall00-aaaaaaaa", MANAGED);
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pinata-agent-other")).toBe(true);
-    expect(fake.containers.has("pinata-other")).toBe(true);
-    expect(fake.hasNetwork(networkName("otherinstall"))).toBe(true);
-    expect(fake.volumes.has("pinata-scratch")).toBe(true);
-    expect(fake.containers.has("pinata-mine")).toBe(true);
-    expect(fake.hasNetwork("pinata-net")).toBe(true);
-    expect(fake.volumes.has("pinata-shared-oldinstall00-aaaaaaaa")).toBe(true);
-    expect(harness.stdout()).not.toContain("removed");
   });
 });

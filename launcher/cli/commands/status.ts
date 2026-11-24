@@ -7,23 +7,10 @@ import {
   LABELS,
   roleOf,
 } from "../../backend/index.ts";
-import {
-  agentVolumeName,
-  installServices,
-  isLegacyAgentVolume,
-  mountedVolumes,
-  overlayVolumes,
-} from "../../container/index.ts";
+import { agentVolumeName, installServices, mountedVolumes, overlayVolumes } from "../../container/index.ts";
 import { type Launch, liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
-import {
-  knownRepos,
-  LauncherError,
-  lstatOrUndefined,
-  repoRecordOf,
-  shortHash,
-  stateLayout,
-} from "../../shared/index.ts";
+import { LauncherError, repoRecordOf, shortHash } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, reachableBackend, writeLines } from "../deps.ts";
 import { launcherVersion } from "../versions.ts";
@@ -75,31 +62,13 @@ const containerLines = async (backend: Backend, context: LaunchContext) => {
   ];
 };
 
-const LEFTOVER_HINT = "left by an older pinata; pinata restart removes it";
-
-const leftoverFolders = async (stateDir: string) => {
-  const layout = stateLayout(stateDir);
-  const legacy = (await knownRepos(stateDir)).map((hash) => layout.repo(hash).legacy.sync);
-  const candidates = [layout.renders, ...legacy];
-  const found = await Promise.all(
-    candidates.map(async (path) => ((await lstatOrUndefined(path)) ? [path] : [])),
-  );
-
-  return found.flat().map((path) => `leftover: ${path}, ${LEFTOVER_HINT}`);
-};
-
 const piFolderLines = async (backend: Backend, context: LaunchContext) => {
   const install = installIdOf(context.stateDir);
   const shared = agentVolumeName(install);
   const volumes = await backend.listVolumes();
   const created = volumes.some((volume) => volume.name === shared);
-  const legacy = volumes.filter((volume) => isLegacyAgentVolume(install, volume.name));
 
-  return [
-    created ? `pi folder: ${shared}, shared by every folder's sandbox` : "pi folder: not created yet",
-    ...legacy.map((volume) => `leftover: volume ${volume.name}, ${LEFTOVER_HINT}`),
-    ...(await leftoverFolders(context.stateDir)),
-  ];
+  return [created ? `pi folder: ${shared}, shared by every folder's sandbox` : "pi folder: not created yet"];
 };
 
 const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
@@ -114,7 +83,7 @@ const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
     ];
   } catch (error) {
     if (error instanceof LauncherError) {
-      return [`runtime: none (${error.message})`, ...(await leftoverFolders(context.stateDir))];
+      return [`runtime: none (${error.message})`];
     }
 
     throw error;

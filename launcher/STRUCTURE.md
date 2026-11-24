@@ -10,7 +10,6 @@ CONFIGURATION.md               every config key, the one config file, credential
 ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps
-REMOVED-DEFAULTS.md            the egress presets and config keys earlier versions shipped, and how to add them back
 tsconfig.build.json            emits dist/ (gitignored) for the published bin
 examples/config.json           a sample config file for a team to start from
 schema/sandbox-config.schema.json  the config keys
@@ -63,7 +62,7 @@ cli/launches.ts                begin and finish a launch (registered under the f
 cli/busy.ts                    busyLaunches, the live launches of this state dir, and vmSessions, the VM's busy count that adds the running agent containers of other installs and names them
 cli/ground.ts                  the ground lock with its waiting line, the install's services started under it, the idle teardown of services, relay, network and proxy and the idle proxy stop (both wait for the lock unless a launch of this state dir is registered)
 cli/prepare.ts                 the repository's preparation lock with its waiting line, its if-free form for the opportunistic removals, its wait-unless-another-session form for the folder's last session, and the setup commands run in the agent container; the install's agent lock (withAgentLock) around the shared pi folder
-cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection with the managed `pinata-*` objects of older builds that have no install label, shared volumes kept, and the state entries the layout does not name in the default state dir
+cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection of unused volumes and images
 cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), the CAs the image trusts, notices
 cli/sandbox-proxy.ts           the install's proxy input and token, opened under the ground lock, and the denial summary at exit with a reason and fix per kind (also the doctor's rule hints and blocked warnings)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
@@ -73,7 +72,7 @@ cli/host-routes.ts             which command lines start no session: help, versi
 cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi, not linked in, outside the workspace root and every folder a sandbox has run in), spawning it for host jobs (spawnHostJob), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per install, their hashes kept in seen.json
 cli/versions.ts                pinata version, the tested pi version and image pi version, the version compare
-cli/commands/status.ts         pinata status, with each configured service and its state, the shared pi folder and, in one place, what older launchers left
+cli/commands/status.ts         pinata status, with each configured service and its state and the shared pi folder
 cli/commands/config.ts         pinata config, with the effective write-back keys of each file and their source
 cli/commands/egress.ts         pinata egress allow, revoke and list
 cli/commands/restart.ts        pinata restart: live-session refusal, removeSandbox with the host records of what was in the VM cleared under its locks, then the VM created through acceptAll with stepsFrontEnd; a failed creation says the VM is gone
@@ -143,7 +142,7 @@ workspace/git/layout.ts        the nearest folder with a .git entry, and the git
 ```
 backend/index.ts               public surface
 backend/types.ts               the Backend contract with its VM
-backend/labels.ts              every pinata.* label key, the container roles, isSession and isOlderBuild (a `pinata-*` name with the managed label and no install label)
+backend/labels.ts              every pinata.* label key, the container roles and isSession
 backend/image-reference.ts     image reference parsing
 backend/install.ts             the install id, the install's network and relay names, and the services alias
 backend/exec-capture.ts        a non-tty exec with collected output
@@ -155,8 +154,8 @@ backend/colima/engine-client.ts  the engine HTTP client over the socket, with it
 backend/colima/container-body.ts  container create bodies from a spec, with the capability, privilege, process, open files and /dev/shm limits
 backend/colima/exec-session.ts exec streams with backpressure, ended quietly when the host output closes
 backend/colima/images.ts       image pull, build (with the output tail of a failed build) and removal
-backend/colima/volumes.ts      volume operations, with the listing of older builds' volumes
-backend/colima/networks.ts     the install's network: inspect, the managed check, creation (internal, no IPv6, isolated gateway, with its engine version check), the subnet, removal, and the listing and removal by name of older builds' networks
+backend/colima/volumes.ts      volume operations
+backend/colima/networks.ts     the install's network: inspect, the managed check, creation (internal, no IPv6, isolated gateway, with its engine version check), the subnet and removal
 backend/colima/relay.ts        the install's one relay: joins the install's network as pinata-proxy on port 3128 and forwards to the proxy's host port, labelled with the hash of its inputs (the network's subnet included) and replaced when they change
 backend/colima/relay-script.ts the relay's node script: serves only clients inside the install network's subnet, one upstream connection per client, the preamble first
 backend/colima/vm.ts           VM start (at the vm config size when stopped), size, inspect, apply for the setup, the launch reconcile of shares and size in one restart, and stop
@@ -173,7 +172,7 @@ backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and t
 container/index.ts             public surface
 container/spec.ts              the container spec: mounts (the workspace root read-write), the install's network, the forwarder's service ports and host, service volumes left out of the hand-over, env (env.set under pinata's variables, the hand-over wait flag), the env.allow names env.set leaves forwarded, labels, the mount table check (no target twice, no mount over the image's paths)
 container/volumes.ts           the volume plan: agent, overlay and mounts.volumes names, targets and labels; userVolume names a volume shared by every folder of the state dir
-container/names.ts             container and volume names (agent, cache and shared volumes, with isSharedVolumeName), the pod and service container names; the install's agent volume name and isLegacyAgentVolume for the per-repository ones of older launchers
+container/names.ts             container and volume names (agent, cache and shared volumes), the pod and service container names; the install's agent volume name
 container/services.ts          ensureServices and stopServices for the install: one pod on the install's network under the services alias, the service specs, the volume hand-over to each service user, the ready wait with its log tail, decide (fresh, refresh or keep by services hash) and the stop of all services at once; serviceVolumes, the service volumes the config names
 container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over (chownRoots, also for the pod) (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker and the forwarder's status, the exited-during-startup error
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
@@ -501,7 +500,6 @@ tests/cli/launch-host-sessions.test.ts  host sessions at launch
 tests/cli/launch-sessions.test.ts    session end and the sweep
 tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit, with the allowlist the launch started with
 tests/cli/sweep.test.ts              the sweep of unused repositories and of the state dir
-tests/cli/sweep-state.test.ts        the daily removal of state entries the layout does not name
 tests/cli/launch-wiring.test.ts      launch wiring, no leaks, and the file cache watch around pi
 tests/cli/launch-workspace.test.ts   the workspace root bound read-write, the git dir outside it refused, a plain folder without overlays, the overlay notices
 tests/cli/launch-mounts.test.ts      binds at launch (VM needs and shares, the read-only mount, refusals before the engine) and setup (order, env, failure, doctor skip)

@@ -92,17 +92,6 @@ describe("loadEffectiveConfig", () => {
     );
     await expect(loadWith("{ not json")).rejects.toThrow("invalid JSON");
   });
-
-  it("keeps the hint of a replaced key and still names the file", async () => {
-    const file = await createConfigFile();
-
-    await file.write({ workspaceRoots: ["/work"] });
-
-    await expect(loadEffectiveConfig({ env: file.env })).rejects.toMatchObject({
-      message: "config: workspaceRoots is not a known key",
-      hint: expect.stringContaining(`fix ${file.userFile}: workspaceRoots was replaced by workspaceRoot`),
-    });
-  });
 });
 
 describe("loadEffectiveConfig with the example config", () => {
