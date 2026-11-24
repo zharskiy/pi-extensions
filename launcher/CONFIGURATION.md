@@ -132,9 +132,9 @@ A *grant* is a host you allow from the command line, without editing a file:
 
 ```console
 $ pinata egress allow docs.example.com
-allowed docs.example.com
+✔ Allowed docs.example.com
 $ pinata egress allow git.example.com:8443
-allowed git.example.com:8443
+✔ Allowed git.example.com:8443
 ```
 
 - A grant is for every folder and every session. It applies at once, also to running sessions, and stays until you revoke it.

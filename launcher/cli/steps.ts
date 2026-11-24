@@ -80,10 +80,13 @@ export const quietDeps = (deps: CliDeps) => {
   return { deps: { ...deps, runner, stderr }, output: () => chunks.join("\n") };
 };
 
+export const glyphsShown = (deps: Pick<CliDeps, "stdout" | "env">) =>
+  isTerminal(deps.stdout) && unicodeOf(deps.env);
+
 export const stepsOf = (deps: Pick<CliDeps, "stdout" | "stderr" | "env">, timers: Timers = realTimers) => {
   const live = isTerminal(deps.stdout);
   const paint = painterOf(colourOf(deps.env, deps.stdout));
-  const shown = (text: string) => (live && unicodeOf(deps.env) ? text : asciiOf(text));
+  const shown = (text: string) => (glyphsShown(deps) ? text : asciiOf(text));
   const state = { printed: false, changed: false, pending: false };
   const columns = () => ("columns" in deps.stdout && Number(deps.stdout.columns)) || DEFAULT_COLUMNS;
 
@@ -180,7 +183,7 @@ export const stepsOf = (deps: Pick<CliDeps, "stdout" | "stderr" | "env">, timers
     print(deps.stdout, outcome);
 
     rows.forEach(([label, value]) => {
-      print(deps.stdout, `  ${`${label}:`.padEnd(width)}  ${value}`);
+      print(deps.stdout, `  ${(label === "" ? "" : `${label}:`).padEnd(width)}  ${value}`);
     });
   };
 

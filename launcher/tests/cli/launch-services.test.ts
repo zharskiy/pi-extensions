@@ -110,9 +110,10 @@ describe("a launch with services", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("services: 2");
-    expect(lines).toContain(`service: db running (${db})`);
-    expect(lines).toContain("service: cache not started");
+    expect(lines.slice(2, 4)).toEqual([
+      `  Services:    db, running (${db})`,
+      "               cache, not started",
+    ]);
   });
 
   it("starts only the agent, on the internal network, without services", async () => {

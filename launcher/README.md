@@ -138,10 +138,10 @@ The `pi` link then runs this checkout's sources, `~/.local/bin/pinata` links to 
 
    ```console
    $ pinata egress allow docs.example.com
-   allowed docs.example.com
+   ✔ Allowed docs.example.com
    ```
 
-5. If something does not work, run `pinata doctor`. It shows by area (host, sandbox, network, credentials) one line per thing that works, such as `vm`, `sandbox`, `isolation`, `tls` and `secrets`, and each check that warns or fails under its own name, with the reasons and a `hint:` under it; it lists the launch notices at the end and closes with one `result:` line that names the checks that failed or warned. The credential rules that pass share one line, `logins` when each is a pi login, else `credential hosts`; a rule from your `credentials.rules` that fails or warns shows its rule id. `--verbose` lists every check with its detail, the credential rules with their ids and the leak sweep in its own area. The leak sweep does not check `env.set` values that match the config and names the secret-looking ones it skipped, so it does not catch a secret written into `env.set`. A glab host you never logged in to gets no notice while another glab host has a token.
+5. If something does not work, run `pinata doctor`. It shows by area (host, sandbox, network, credentials) one line per thing that works, such as `vm`, `sandbox`, `isolation`, `tls` and `secrets`, and each check that warns or fails under its own name, marked ✔ when fine, ▲ when it warns and ✖ when it fails, with the reasons and the fix (`→`) under it; it lists the launch notices at the end and closes with one sentence that names the checks that failed or warned. The credential rules that pass share one line, `logins` when each is a pi login, else `credential hosts`; a rule from your `credentials.rules` that fails or warns shows its rule id. `--verbose` lists every check with its detail, the credential rules with their ids and the leak sweep in its own area. The leak sweep does not check `env.set` values that match the config and names the secret-looking ones it skipped, so it does not catch a secret written into `env.set`. A glab host you never logged in to gets no notice while another glab host has a token.
 
 ## Everyday use
 
@@ -172,7 +172,7 @@ In the table, *host pi* is pi's managed install on your Mac, or without one the 
 | `pinata egress list [--denied]` | the grants, or the hosts the proxy blocked |
 | `pinata restart` | delete the sandbox VM with everything in it and create it again, once no pi session runs; the next pi rebuilds the image and reinstalls your extensions |
 | `pinata stop` | stop the services and the sandbox VM when no pi session runs |
-| `pinata doctor [--verbose]` | prepare the sandbox like pi and report what needs attention by area, with a hint per problem; --verbose lists every check with its detail |
+| `pinata doctor [--verbose]` | prepare the sandbox like pi and report what needs attention by area, with the fix for each problem; --verbose lists every check with its detail |
 | `pinata --version`, `pinata help` | version and usage |
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config -l` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).

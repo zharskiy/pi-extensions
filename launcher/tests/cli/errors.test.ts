@@ -61,7 +61,12 @@ describe("error rendering", () => {
     expect(await runPinata(["restart", "-h"], harness.deps)).toBe(0);
     expect(await runPinata(["status", "--help"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe(
-      ["usage: pinata config [--json]", "usage: pinata restart", "usage: pinata status", ""].join("\n"),
+      [
+        "pinata config [--json]  the effective config and whether each key comes from the config file or the default",
+        "pinata restart  delete the sandbox VM with everything in it and create it again, once no pi session runs; the next pi rebuilds the image and reinstalls your extensions",
+        "pinata status  runtime, services, container, proxy, image, launches, grants, overlays, volumes",
+        "",
+      ].join("\n"),
     );
     expect(harness.stderr()).toBe("");
   });
@@ -71,7 +76,7 @@ describe("error rendering", () => {
 
     expect(await runPinata(["-v"], harness.deps)).toBe(1);
     expect(await runPinata(["-h"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toMatch(/^usage:\n/);
+    expect(harness.stdout()).toMatch(/^pi \[args\.\.\.\] {2,}run pi in the sandbox/);
   });
 
   it("no longer has a gc command", async () => {

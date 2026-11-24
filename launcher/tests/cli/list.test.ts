@@ -27,12 +27,15 @@ const listed = async (state: VmInspect | Error, setup?: (fake: Fake, hash: strin
 
 describe("pinata list", () => {
   it("says when the VM is not created", async () => {
-    expect((await listed({ state: "absent" })).stdout).toBe("vm: pinata not created\n");
+    expect((await listed({ state: "absent" })).stdout).toBe("The sandbox VM is not created yet.\n");
   });
 
   it.each<[VmInspect | Error, string]>([
-    [{ state: "stopped", size: SIZE, shares: [] }, "vm: pinata stopped (4 cpus, 8 GiB memory)\n"],
-    [new Error("colima did not answer within 3 seconds"), "vm: pinata stopped\n"],
+    [
+      { state: "stopped", size: SIZE, shares: [] },
+      "The sandbox VM is stopped with 4 CPUs and 8 GiB of memory.\n",
+    ],
+    [new Error("colima did not answer within 3 seconds"), "The sandbox VM is stopped.\n"],
   ])("gives the size of a stopped VM when colima has it", async (state, line) => {
     expect((await listed(state)).stdout).toBe(line);
   });
@@ -55,12 +58,18 @@ describe("pinata list", () => {
 
     expect(stdout).toBe(
       [
-        "vm: pinata running (4 cpus, 8 GiB memory)",
-        `session: ${harness.repoRoot} ${ids[0]?.slice(0, 12)} running`,
-        `session: unknown ${ids[1]?.slice(0, 12)} stopped`,
+        "The sandbox VM is running with 4 CPUs and 8 GiB of memory.",
+        `  Sessions:  ${harness.repoRoot} (${ids[0]?.slice(0, 12)}, running)`,
+        `             a folder pinata no longer knows (${ids[1]?.slice(0, 12)}, stopped)`,
         "",
       ].join("\n"),
     );
     expect(harness.calls).toEqual([]);
+  });
+
+  it("says when a running VM runs no session", async () => {
+    expect((await listed({ state: "running", size: SIZE, shares: [] })).stdout).toBe(
+      ["The sandbox VM is running with 4 CPUs and 8 GiB of memory.", "  Sessions:  none", ""].join("\n"),
+    );
   });
 });

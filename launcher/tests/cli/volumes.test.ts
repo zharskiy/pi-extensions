@@ -81,11 +81,11 @@ describe("pinata status and volumes", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("overlays: 1");
-    expect(lines).toContain(`overlay: ${join(harness.repoRoot, "node_modules")} (${overlay})`);
-    expect(lines).toContain("volumes: 2");
-    expect(lines).toContain(`volume: /home/pi/.cache/pip (${shared})`);
-    expect(lines).toContain(`volume: ${DATA} (${data})`);
+    expect(lines.filter((line) => /^ {2}(Overlays:|Volumes:| ) /.test(line))).toEqual([
+      `  Overlays:    ${join(harness.repoRoot, "node_modules")} (${overlay})`,
+      `  Volumes:     /home/pi/.cache/pip (${shared})`,
+      `               ${DATA} (${data})`,
+    ]);
   });
 
   it("reports none of either when nothing is configured or found", async () => {
@@ -95,9 +95,6 @@ describe("pinata status and volumes", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("overlays: 0");
-    expect(lines).toContain("volumes: 0");
-    expect(lines.some((line) => line.startsWith("overlay:"))).toBe(false);
-    expect(lines.some((line) => line.startsWith("volume:"))).toBe(false);
+    expect(lines.filter((line) => /^ {2}(Overlays|Volumes):/.test(line))).toEqual([]);
   });
 });

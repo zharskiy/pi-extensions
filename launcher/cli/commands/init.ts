@@ -11,16 +11,17 @@ import { createPlainPrompts } from "../prompt/plain.ts";
 import { createRichPrompts } from "../prompt/rich.ts";
 import { findTerminal, isSet, realTimers, withTerminal } from "../prompt/terminal.ts";
 import type { Timers, Ui } from "../prompt/types.ts";
-import { applyPlan, lineFrontEnd } from "../setup/apply.ts";
+import { applyPlan, stepsFrontEnd } from "../setup/apply.ts";
 import { detectHost } from "../setup/detect.ts";
 import { readConfigText, readDocument, writeDocument } from "../setup/document.ts";
 import { runSetup, type SetupInput } from "../setup/flow.ts";
+import { tildeForm } from "../setup/folders.ts";
 import { answersForYes, configuredRoot, isFirstRun, NO_ROOT, planOf } from "../setup/plan.ts";
-import { createReview } from "../setup/review.ts";
-import { invalidText } from "../setup/screens.ts";
+import { invalidText, NOTHING_TO_DO, nextCommand } from "../setup/screens.ts";
 import type {
   Answers,
   ApplyEffects,
+  ApplyEvent,
   ApplyFrontEnd,
   ConfigDocument,
   DocumentRead,
@@ -28,6 +29,7 @@ import type {
   SetupIo,
   SharePlan,
 } from "../setup/types.ts";
+import { type Steps, stepsOf } from "../steps.ts";
 import { assertVmFitsHost, prepareVmDirs, vmSharesFor } from "../vm.ts";
 
 export const YES_FLAG = "--yes";
@@ -144,7 +146,7 @@ const invalidConfig = (file: string, read: Extract<DocumentRead, { ok: false }>)
 
 type FrontOf = (facts: HostFacts, timers: Timers) => ApplyFrontEnd;
 
-export const acceptAll = async (deps: CliDeps, frontOf?: FrontOf) => {
+export const acceptAll = async (deps: CliDeps, frontOf: FrontOf) => {
   const context = contextOf(deps);
   const read = await readConfig(context.configFile);
 
@@ -170,14 +172,41 @@ export const acceptAll = async (deps: CliDeps, frontOf?: FrontOf) => {
     assertVmFitsHost(deps, plan.vm.size);
   }
 
-  const timers = { ...realTimers, now: deps.now };
-  const state = { answers, touched: new Set<never>() };
-  const review = createReview(document, facts, deps.env).lines(state, plan, { plain: true, table: true });
-  const streams = { out: deps.stdout, err: deps.stderr, timers };
-
-  const front = frontOf?.(facts, timers) ?? lineFrontEnd(streams, facts, review(Number.POSITIVE_INFINITY));
+  const front = frontOf(facts, { ...realTimers, now: deps.now });
 
   return applyPlan(front, effectsFor(deps, context), document, { plan, answers });
+};
+
+const closingFrontEnd = (steps: Steps, facts: HostFacts, timers: Timers): ApplyFrontEnd => {
+  const front = stepsFrontEnd(steps, facts, timers);
+
+  const report = (event: ApplyEvent) => {
+    if (event.kind === "nothing-to-do") {
+      steps.close(NOTHING_TO_DO);
+
+      return;
+    }
+
+    if (event.kind === "done" && event.vmReady) {
+      steps.close("The sandbox is ready.", [
+        ["Start", nextCommand(event.root, facts)],
+        ["Settings", tildeForm(facts.configFile, facts.home)],
+        ["Check", "pinata doctor"],
+      ]);
+
+      return;
+    }
+
+    if (event.kind === "done") {
+      steps.close("The settings are saved.");
+
+      return;
+    }
+
+    front.report(event);
+  };
+
+  return { ...front, report };
 };
 
 const ioOf = (ui: Ui): SetupIo => ({
@@ -221,7 +250,9 @@ const ask = (deps: CliDeps, ui: Ui) => {
 
 export const initCommand = async (deps: CliDeps, args: string[]) => {
   if (args.includes(YES_FLAG)) {
-    return acceptAll(deps);
+    const steps = stepsOf(deps);
+
+    return acceptAll(deps, (facts, timers) => closingFrontEnd(steps, facts, timers));
   }
 
   if (isSet(deps.env.CI)) {

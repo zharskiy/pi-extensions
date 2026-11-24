@@ -57,7 +57,7 @@ const launchesShown = async (harness: Awaited<ReturnType<typeof createHarness>>)
   return harness
     .stdout()
     .split("\n")
-    .findLast((line) => line.startsWith("launches: "));
+    .findLast((line) => line.startsWith("  Launches:"));
 };
 
 describe("the end of a session", () => {
@@ -434,7 +434,7 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(fake.created).toHaveLength(1);
     expect(fake.containers.size).toBe(0);
     expect(fake.stops.map((stop) => stop.id)).toContain(fake.created[0]?.summary.id);
-    expect(await launchesShown(harness)).toBe("launches: 0 running in the sandbox");
+    expect(await launchesShown(harness)).toBe("  Launches:    none");
     expect(signals.listenerCount("SIGINT")).toBe(0);
     expect(piSessions(fake)).toEqual([]);
   });
@@ -463,7 +463,7 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(await run([], harness.deps)).toBe(130);
     expect(sessionsWhenBuilt).toEqual([1, 1]);
     expect(fake.containers.size).toBe(0);
-    expect(await launchesShown(harness)).toBe("launches: 0 running in the sandbox");
+    expect(await launchesShown(harness)).toBe("  Launches:    none");
   });
 });
 

@@ -131,10 +131,15 @@ describe("pinata init without a terminal", () => {
     expect(harness.stderr()).toBe('pinata: unknown init option "extra"\n  hint: pinata init [--yes]\n');
     expect(await runPinata(["init", "--help"], harness.deps)).toBe(0);
     expect(await runPinata(["help"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("usage: pinata init [--yes]\n");
-    expect(harness.stdout()).toContain(
-      "set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
-    );
+    expect(
+      harness
+        .stdout()
+        .split("\n")
+        .filter((line) => line.startsWith("pinata init ")),
+    ).toEqual([
+      "pinata init [--yes]  set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
+      "pinata init [--yes]                       set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
+    ]);
   });
 });
 
@@ -199,20 +204,13 @@ describe("pinata init --yes", () => {
     ]);
     expect(harness.stdout()).toBe(
       [
-        "  Project folder: ~/work (changed)",
-        "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
-        "  Settings write-back: on (default)",
-        "When you apply:",
-        `  - create ${harness.userConfigFile}`,
-        '      added workspaceRoot: "~/work"',
-        "  - create the sandbox VM with this folder, pi's sessions folder and pinata's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
-        `Saved ${harness.userConfigFile}`,
-        "Created the VM in 0s: 8 CPUs, 10 GiB memory, 60 GiB disk",
-        "Done. The sandbox is ready.",
-        "Next: cd <a project in ~/work> && pi",
-        "Change: pinata init",
-        "Check: pinata doctor",
-        `Settings: ${harness.userConfigFile}`,
+        `ok Wrote the settings (${harness.userConfigFile})`,
+        "ok Created the sandbox VM in 0s",
+        "",
+        "The sandbox is ready.",
+        "  Start:     cd <a project in ~/work> && pi",
+        `  Settings:  ${harness.userConfigFile}`,
+        "  Check:     pinata doctor",
         "",
       ].join("\n"),
     );
@@ -339,15 +337,14 @@ describe("pinata init --yes", () => {
     await holdLaunch(harness);
 
     expect(await runPinata(["init", "--yes"], harness.deps)).toBe(0);
-    expect(harness.stdout().split("\n").slice(0, 7)).toEqual([
-      `  Project folder: ${harness.repoRoot} (current)`,
-      "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
-      "  Settings write-back: on (default)",
-      "When you apply:",
-      "  - keep the sandbox VM as it is for now: 1 pi session is running. The first pi you start after it exits restarts it with the new folders",
-      "! Kept as it is: 1 pi session is running. The first pi you start after it exits restarts it with the new folders.",
-      "Done. Settings saved.",
-    ]);
+    expect(harness.stdout()).toBe(
+      [
+        "! Kept as it is: 1 pi session is running. The first pi you start after it exits restarts it with the new folders.",
+        "",
+        "The settings are saved.",
+        "",
+      ].join("\n"),
+    );
     expect(harness.applied).toEqual([]);
   });
 
@@ -442,13 +439,16 @@ describe("pinata init --yes", () => {
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
       workspaceRoot: harness.repoRoot,
     });
-    expect(harness.stderr()).toBe(
-      "! The VM could not be checked (colima did not answer within 3 seconds). Run pinata doctor to see why.\n",
+    expect(harness.stderr()).toBe("");
+    expect(harness.stdout()).toBe(
+      [
+        `ok Wrote the settings (${harness.userConfigFile})`,
+        "! The VM could not be checked (colima did not answer within 3 seconds). Run pinata doctor to see why.",
+        "",
+        "The settings are saved.",
+        "",
+      ].join("\n"),
     );
-    expect(harness.stdout()).toContain(
-      "  - the sandbox VM could not be checked (colima did not answer within 3 seconds); run pinata doctor after applying\nSaved ",
-    );
-    expect(harness.stdout()).toMatch(/\nSaved .+\nDone\. Settings saved\.\n/);
   });
 
   it("fails with the VM's error after saving the config", async () => {
@@ -474,14 +474,12 @@ describe("pinata init --yes", () => {
     expect(harness.stderr()).toBe(
       [
         "x Could not create the VM after 0s.",
-        "  no space left; see the colima log",
-        "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pinata init again. pinata doctor checks everything.",
+        "    no space left; see the colima log",
+        "x Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pinata init again. pinata doctor checks everything.",
         "",
       ].join("\n"),
     );
-    expect(harness.stdout()).toMatch(
-      /^ {2}Project folder: [\s\S]*\nWhen you apply:\n[\s\S]*\nSaved [^\n]+\n$/,
-    );
+    expect(harness.stdout()).toBe(`ok Wrote the settings (${harness.userConfigFile})\n`);
   });
 
   it("lets an unexpected error from the VM step reach the error handler after saving the config", async () => {
@@ -504,7 +502,7 @@ describe("pinata init --yes", () => {
     expect(harness.stderr()).toBe("pinata: unexpected error: EACCES: permission denied, mkdir\n");
   });
 
-  it("prints the review with the changed share before restarting a running VM", async () => {
+  it("says it restarted a running VM whose share changed", async () => {
     const harness = await initSetup();
     const old = join(harness.root, "old");
 
@@ -527,15 +525,17 @@ describe("pinata init --yes", () => {
     const deps = { ...harness.deps, backend: () => fake.backend };
 
     expect(await runPinata(["init", "--yes"], deps)).toBe(0);
-    expect(harness.stdout().split("\n").slice(0, 7)).toEqual([
-      `  Project folder: ${harness.repoRoot} (current)`,
-      "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
-      "  Settings write-back: on (default)",
-      "When you apply:",
-      "  - restart the sandbox VM with the new folders; no pi session is running, and this usually takes under a minute",
-      "Restarted the VM in 0s with the new folders",
-      "Done. The sandbox is ready.",
-    ]);
+    expect(harness.stdout()).toBe(
+      [
+        "ok Restarted the sandbox VM in 0s",
+        "",
+        "The sandbox is ready.",
+        `  Start:     cd <a project in ${harness.repoRoot}> && pi`,
+        `  Settings:  ${harness.userConfigFile}`,
+        "  Check:     pinata doctor",
+        "",
+      ].join("\n"),
+    );
     expect(harness.stderr()).toBe("");
   });
 });

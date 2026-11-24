@@ -157,18 +157,18 @@ const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
 };
 
 const hostSection = async (prepared: boolean) => [
-  "host",
-  `  ok    pi                ${await testedPiVersion()} at ~/.pi/agent/bin/pi; the sandbox runs the same version`,
-  "  ok    provider hosts    1 built-in providers with known hosts",
-  expect.stringMatching(/^ {2}ok {4}sessions {10}~\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
-  ...(prepared ? ["  ok    host side"] : []),
+  "Host",
+  `  ok pi                ${await testedPiVersion()} at ~/.pi/agent/bin/pi; the sandbox runs the same version`,
+  "  ok provider hosts    1 built-in providers with known hosts",
+  expect.stringMatching(/^ {2}ok sessions {10}~\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
+  ...(prepared ? ["  ok host side"] : []),
 ];
 
-const SHARES_UNKNOWN = "  skip  vm shares         colima has not written the shares of profile pinata yet";
+const SHARES_UNKNOWN = "  -  vm shares         colima has not written the shares of profile pinata yet";
 
-const NO_PARENT = "  skip  parent proxy      no parent proxy configured";
+const NO_PARENT = "  -  parent proxy      no parent proxy configured";
 
-const NOT_INSPECTED = "  ok    tls inspection    not inspected";
+const NOT_INSPECTED = "  ok tls inspection    not inspected";
 
 const EXAMPLE_AUTH = { example: { type: "api_key", key: "real-secret-value-1234567890" } };
 
@@ -228,34 +228,34 @@ describe("pinata doctor", () => {
     expect(stdout.split("\n")).toEqual([
       ...(await hostSection(true)),
       "",
-      "sandbox",
+      "Sandbox",
       SHARES_UNKNOWN,
-      "  ok    vm",
-      "  skip  vm size           colima did not report the size of profile pinata",
-      "  skip  file cache        the backend does not count the VM's open files",
-      "  ok    image             pinata-base:local sha256:built-1",
-      "  ok    container",
-      "  ok    sync",
-      "  ok    sessions share    writable at the host path",
+      "  ok vm",
+      "  -  vm size           colima did not report the size of profile pinata",
+      "  -  file cache        the backend does not count the VM's open files",
+      "  ok image             pinata-base:local sha256:built-1",
+      "  ok container",
+      "  ok sync",
+      "  ok sessions share    writable at the host path",
       "",
-      "network",
-      `  ok    proxy             pid 77 port ${port}`,
-      "  ok    proxy health      the proxy answers its health check",
+      "Network",
+      `  ok proxy             pid 77 port ${port}`,
+      "  ok proxy health      the proxy answers its health check",
       NO_PARENT,
-      "  ok    isolation         no direct route to the internet (tried 1.1.1.1:443)",
+      "  ok isolation         no direct route to the internet (tried 1.1.1.1:443)",
       NOT_INSPECTED,
-      "  ok    tls in sandbox    the container trusts TLS to pi.dev through the sandbox proxy",
-      "  ok    mcp               pi mcp list connects to every enabled server",
+      "  ok tls in sandbox    the container trusts TLS to pi.dev through the sandbox proxy",
+      "  ok mcp               pi mcp list connects to every enabled server",
       "",
-      "credentials",
-      "  skip  trust             no credential rule, so the proxy adds no credential to any request",
+      "Credentials",
+      "  -  trust             no credential rule, so the proxy adds no credential to any request",
       "",
-      "leak sweep",
-      "  ok    credential sweep  no credential in the environment, auth.json or mcp.json",
-      "  ok    mcp-auth sweep    no mcp-auth.json in the sandbox yet",
-      "  ok    settings sweep    no settings.json package carries a credential in its URL",
+      "Leak sweep",
+      "  ok credential sweep  no credential in the environment, auth.json or mcp.json",
+      "  ok mcp-auth sweep    no mcp-auth.json in the sandbox yet",
+      "  ok settings sweep    no settings.json package carries a credential in its URL",
       "",
-      "result: ok",
+      "All checks passed.",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -288,25 +288,25 @@ describe("pinata doctor", () => {
     const { code, stdout, harness } = await doctorWith({ hostAuth: EXAMPLE_AUTH, args: [] });
 
     expect(stdout.split("\n")).toEqual([
-      "host",
-      `  ok    pi                ${await testedPiVersion()} at ~/.pi/agent/bin/pi; the sandbox runs the same version`,
+      "Host",
+      `  ok pi                ${await testedPiVersion()} at ~/.pi/agent/bin/pi; the sandbox runs the same version`,
       expect.stringMatching(
-        /^ {2}ok {4}sessions {10}saved on the host in ~\/\.pi\/agent\/sessions\/--.+-repo--, writable from the sandbox$/,
+        /^ {2}ok sessions {10}saved on the host in ~\/\.pi\/agent\/sessions\/--.+-repo--, writable from the sandbox$/,
       ),
       "",
-      "sandbox",
+      "Sandbox",
       SHARES_UNKNOWN,
-      "  ok    sandbox           starts here (pinata-base:local)",
+      "  ok sandbox           starts here (pinata-base:local)",
       "",
-      "network",
-      "  ok    isolation         no direct route to the internet (tried 1.1.1.1:443)",
-      "  ok    tls               not inspected; the sandbox trusts HTTPS through the proxy",
+      "Network",
+      "  ok isolation         no direct route to the internet (tried 1.1.1.1:443)",
+      "  ok tls               not inspected; the sandbox trusts HTTPS through the proxy",
       "",
-      "credentials",
-      "  ok    logins            1 login answered through the proxy (--verbose lists them)",
-      "  ok    secrets           no real credential inside the sandbox",
+      "Credentials",
+      "  ok logins            1 login answered through the proxy (--verbose lists them)",
+      "  ok secrets           no real credential inside the sandbox",
       "",
-      "result: ok",
+      "All checks passed.",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -327,7 +327,7 @@ describe("pinata doctor", () => {
       detail: `https://models.example.test/ answered HTTP 200${RULE_NOTE}`,
     });
     expect(check(verbose.stdout, "logins")).toBeUndefined();
-    expect(plain.report.result).toBe("ok");
+    expect(plain.report.result).toBe("All checks passed.");
     expect(verbose.report.result).toBe(plain.report.result);
   });
 
@@ -831,18 +831,18 @@ describe("pinata doctor", () => {
     expect(harness.stdout().split("\n")).toEqual([
       ...(await hostSection(false)),
       "",
-      "sandbox",
+      "Sandbox",
       SHARES_UNKNOWN,
-      "  fail  vm                the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock: socket missing",
-      "        hint: run pi, which starts the sandbox VM with its planned shares, or pinata init when ~/.colima/pinata does not exist",
-      "  skip  file cache        the sandbox VM is not running",
-      "  skip  sandbox checks    not run, because starting the VM failed",
+      "  x  vm                the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock: socket missing",
+      "     -> run pi, which starts the sandbox VM with its planned shares, or pinata init when ~/.colima/pinata does not exist",
+      "  -  file cache        the sandbox VM is not running",
+      "  -  sandbox checks    not run, because starting the VM failed",
       "",
-      "network",
+      "Network",
       NO_PARENT,
       NOT_INSPECTED,
       "",
-      "result: fail (1 failed: vm)",
+      "1 check failed (vm).",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -910,19 +910,19 @@ describe("pinata doctor", () => {
     expect(harness.stdout().split("\n")).toEqual([
       ...(await hostSection(true)),
       "",
-      "sandbox",
+      "Sandbox",
       SHARES_UNKNOWN,
-      "  ok    vm",
-      "  ok    file cache        1200 open files, released at 30720",
-      "  fail  image             build failed",
-      "  skip  sandbox checks    not run, because building the image failed",
+      "  ok vm",
+      "  ok file cache        1200 open files, released at 30720",
+      "  x  image             build failed",
+      "  -  sandbox checks    not run, because building the image failed",
       "",
-      "network",
-      "  ok    proxy             pid 4242 port 3128",
+      "Network",
+      "  ok proxy             pid 4242 port 3128",
       NO_PARENT,
       NOT_INSPECTED,
       "",
-      "result: fail (1 failed: image)",
+      "1 check failed (image).",
       "",
     ]);
   });
@@ -978,16 +978,15 @@ describe("pinata doctor", () => {
       return { code, harness };
     };
 
-    it("colours the words but keeps the plain layout, and clears its progress line before the report", async () => {
+    it("colours the marks but keeps the plain layout, and clears its progress line before the report", async () => {
       const { code, harness } = await terminalDoctor();
       const stdout = harness.stdout();
 
-      expect(stdout).toContain("\u001b[1;31mfail\u001b[0m  vm ");
-      expect(stdout).toContain("\u001b[32mok\u001b[0m    pi ");
-      expect(stdout).toContain("\u001b[36mhint:\u001b[0m run pi, which starts the sandbox VM");
-      expect(stdout).toContain("result: \u001b[1;31mfail\u001b[0m (");
-      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed: vm)");
-      expect(harness.stderr().startsWith("\r\u001b[2Kpinata doctor: preparing the sandbox")).toBe(true);
+      expect(stdout).toContain("\n  \u001b[31mx\u001b[39m  vm ");
+      expect(stdout).toContain("\n  \u001b[32mok\u001b[39m pi ");
+      expect(stdout).toContain("\n     -> run pi, which starts the sandbox VM");
+      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("1 check failed (vm).");
+      expect(harness.stderr().startsWith("\r\u001b[2K... Preparing the sandbox")).toBe(true);
       expect(harness.stderr().endsWith("\r\u001b[2K")).toBe(true);
       expect(harness.stderr()).not.toContain("\n");
       expect(code).toBe(1);
@@ -999,9 +998,9 @@ describe("pinata doctor", () => {
       const outputs = runs.map((harness) => harness.stdout());
 
       expect(outputs.map((stdout) => doctorReport(stdout).result)).toEqual([
-        "fail (1 failed: vm)",
-        "fail (1 failed: vm)",
-        "fail (1 failed: vm)",
+        "1 check failed (vm).",
+        "1 check failed (vm).",
+        "1 check failed (vm).",
       ]);
       expect(outputs.filter((stdout) => stdout.includes("\u001b["))).toEqual([]);
       expect(runs[1]?.stderr()).toBe("");
@@ -1174,11 +1173,9 @@ describe("pinata doctor file cache", () => {
 
   it("comes right after vm size in the sandbox section", async () => {
     const { stdout } = await doctorWith({ vm: { size: RUNNING, readFileCache: counted(1200) } });
-    const sandbox = stdout
-      .split("\n")
-      .filter((line) => /^ {2}\S+ {2,}(vm size|file cache|image) /.test(line));
+    const sandbox = stdout.split("\n").filter((line) => /^ {2}\S+ +(vm size|file cache|image) /.test(line));
 
-    expect(sandbox.map((line) => line.slice(8, 26).trim())).toEqual(["vm size", "file cache", "image"]);
+    expect(sandbox.map((line) => line.slice(5, 23).trim())).toEqual(["vm size", "file cache", "image"]);
   });
 
   it("says the release is off when vm.releaseFileCache is off", async () => {
@@ -1463,7 +1460,7 @@ describe("pinata doctor parent proxy", () => {
     const { port, found } = await parentLine((listening) => `http://[::1]:${listening}`);
 
     expect(found).toMatchObject({
-      section: "network",
+      section: "Network",
       status: "ok",
       detail: `[::1]:${port} accepts connections`,
     });
@@ -1471,7 +1468,7 @@ describe("pinata doctor parent proxy", () => {
 
   it("fails an https parent proxy, which the launcher proxy does not chain to", async () => {
     expect((await parentLine(() => "https://proxy.example.test")).found).toMatchObject({
-      section: "network",
+      section: "Network",
       status: "fail",
       detail: "HTTPS_PROXY uses https, only http parent proxies are supported",
     });
@@ -1502,7 +1499,7 @@ describe("pinata doctor mcp sign-in checks", () => {
     await runPinata(["doctor", "--verbose"], harness.deps);
 
     const servers = doctorReport(harness.stdout()).checks.filter(
-      (entry) => entry.section === "credentials" && entry.name.startsWith("mcp "),
+      (entry) => entry.section === "Credentials" && entry.name.startsWith("mcp "),
     );
 
     expect(servers).toMatchObject([
@@ -1526,8 +1523,8 @@ describe("pinata doctor by default", () => {
       detail: "profile pinata has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
     });
     expect(check(stdout, "vm")).toBeUndefined();
-    expect(lines).toContain("  ok    sandbox           starts here (pinata-base:local)");
-    expect(lines).toContain("result: ok with warnings (1 warning: vm size)");
+    expect(lines).toContain("  ok sandbox           starts here (pinata-base:local)");
+    expect(lines).toContain("No check failed, 1 warned (vm size).");
     expect(code).toBe(0);
   });
 

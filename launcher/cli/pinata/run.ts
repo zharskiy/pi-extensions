@@ -5,7 +5,7 @@ import { configCommand, JSON_FLAG } from "../commands/config.ts";
 import { doctorCommand } from "../commands/doctor.ts";
 import { VERBOSE_FLAG } from "../commands/doctor-checks.ts";
 import { egressCommand } from "../commands/egress.ts";
-import { helpCommand, usageOf } from "../commands/help.ts";
+import { helpCommand, printHelp, usageOf } from "../commands/help.ts";
 import { initCommand, YES_FLAG } from "../commands/init.ts";
 import { listCommand } from "../commands/list.ts";
 import { assertOptions } from "../commands/options.ts";
@@ -105,9 +105,7 @@ const dispatch = (deps: CliDeps, [name = "help", ...args]: string[], packageDir:
   }
 
   if (args.some((arg) => HELP_FLAGS.includes(arg))) {
-    writeLine(deps.stdout, `usage: ${usageOf(name)}`);
-
-    return 0;
+    return printHelp(deps, name);
   }
 
   if (command.options !== "parsed") {

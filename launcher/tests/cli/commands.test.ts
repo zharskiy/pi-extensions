@@ -33,14 +33,17 @@ describe("pinata status", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain(`pinata: ${await packageVersion()}`);
-    expect(lines.filter((line) => line.startsWith("runtime: "))).toEqual([]);
-    expect(lines).toContain("runtime socket: /fake/docker.sock");
-    expect(lines).toContain("containers: 0");
-    expect(lines).toContain("proxy: stopped");
-    expect(lines).toContain("image: pinata-base:local sha256:built-1");
-    expect(lines).toContain("launches: 0 running in the sandbox");
-    expect(lines).toContain("grants: 0 active");
+    expect(lines).toEqual([
+      `Pinata ${await packageVersion()} for the repository ${harness.repoRoot}.`,
+      "  Runtime:     socket /fake/docker.sock",
+      "  Containers:  none",
+      `  Pi folder:   ${agentVolumeName(installIdOf(harness.stateDir))}, shared by every folder's sandbox`,
+      "  Proxy:       stopped",
+      "  Image:       pinata-base:local sha256:built-1",
+      "  Launches:    none",
+      "  Grants:      none",
+      "",
+    ]);
   });
 
   it("names the shared pi folder", async () => {
@@ -51,7 +54,9 @@ describe("pinata status", () => {
     await run([], harness.deps);
 
     expect(await runPinata(["status"], harness.deps)).toBe(0);
-    expect(harness.stdout().split("\n")).toContain(`pi folder: ${agent}, shared by every folder's sandbox`);
+    expect(harness.stdout().split("\n")).toContain(
+      `  Pi folder:   ${agent}, shared by every folder's sandbox`,
+    );
   });
 
   it("names a folder that is no repository a folder", async () => {
@@ -64,8 +69,8 @@ describe("pinata status", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain(`folder: ${folder}`);
-    expect(lines).toContain("launches: 0 running in the sandbox");
+    expect(lines[0]).toBe(`Pinata ${await packageVersion()} for the folder ${folder}.`);
+    expect(lines).toContain("  Launches:    none");
   });
 
   it("reports every launch container of this folder, and no relay", async () => {
@@ -98,8 +103,9 @@ describe("pinata status", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("containers: 1");
-    expect(lines).toContain(`container: ${id} running launch 00000000000000aa digest sha256:one`);
+    expect(lines.filter((line) => /^ {2}(Containers:| {11})/.test(line))).toEqual([
+      `  Containers:  ${id}, running, launch 00000000000000aa, digest sha256:one, sessions in the sandbox volume`,
+    ]);
   });
 
   it("reports the install's proxy without its token", async () => {
@@ -112,9 +118,9 @@ describe("pinata status", () => {
     const proxies = harness
       .stdout()
       .split("\n")
-      .filter((line) => line.startsWith("proxy: "));
+      .filter((line) => line.startsWith("  Proxy:"));
 
-    expect(proxies).toEqual(["proxy: pid 11 port 4001"]);
+    expect(proxies).toEqual(["  Proxy:     pid 11, port 4001"]);
   });
 
   it("reports the live launches of the install with their folders, and the active grants", async () => {
@@ -145,15 +151,12 @@ describe("pinata status", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("launches: 2 running in the sandbox");
-    expect(lines).toContain(
-      `launch: 0123456789abcdef pid ${process.pid} since 2023-11-14T22:13:20.000Z in ${harness.repoRoot}`,
-    );
-    expect(lines).toContain(
-      `launch: 00000000000000e1 pid ${process.pid} since 2023-11-14T22:13:20.000Z in repository ${shortHash(other)}`,
-    );
-    expect(lines).toContain("grants: 1 active");
-    expect(lines).toContain("grant: docs.example.test");
+    expect(lines.slice(-4)).toEqual([
+      `  Launches:  00000000000000e1, pid ${process.pid}, since 2023-11-14T22:13:20.000Z, in repository ${shortHash(other)}`,
+      `             0123456789abcdef, pid ${process.pid}, since 2023-11-14T22:13:20.000Z, in ${harness.repoRoot}`,
+      "  Grants:    docs.example.test",
+      "",
+    ]);
   });
 
   it("still reports the proxy and image without a reachable engine", async () => {
@@ -162,11 +165,14 @@ describe("pinata status", () => {
     const harness = await createHarness({ backend: () => down });
 
     expect(await runPinata(["status"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain(
-      "runtime: none (the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock: socket missing)",
-    );
-    expect(harness.stdout()).toContain("proxy: stopped");
-    expect(harness.stdout()).toContain("(not built yet)");
+    expect(harness.stdout().split("\n").slice(1)).toEqual([
+      "  Runtime:   the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock: socket missing",
+      "  Proxy:     stopped",
+      "  Image:     pinata-base:local, not built yet",
+      "  Launches:  none",
+      "  Grants:    none",
+      "",
+    ]);
   });
 });
 
@@ -179,11 +185,14 @@ describe("pinata config", () => {
     expect(await runPinata(["config"], harness.deps)).toBe(0);
 
     const output = harness.stdout();
-    const json = output.slice(0, output.indexOf("\n# "));
+    const json = output.slice(0, output.indexOf("\n\n"));
 
     expect(JSON.parse(json).sessions.host).toBe(false);
-    expect(output).toContain("# sessions.host: config\n");
-    expect(output).toContain("# mounts.autoOverlays: default\n");
+    expect(output.slice(json.length).split("\n").slice(0, 3)).toEqual([
+      "",
+      "",
+      `${harness.userConfigFile} sets sessions.host, workspaceRoot; every other key has its default value.`,
+    ]);
     expect(JSON.parse(json).image.reference).toBeUndefined();
   });
 
@@ -212,12 +221,13 @@ describe("pinata config", () => {
     });
 
     expect(await runPinata(["config"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain(
-      "# writeBack settings.json default: defaultProvider, defaultModel, defaultThinkingLevel, enabledModels, hideThinkingBlock,",
-    );
-    expect(harness.stdout()).not.toMatch(/# writeBack settings\.json default: .*theme/);
-    expect(harness.stdout()).toContain("# writeBack pi-footer.json config: layout\n");
-    expect(harness.stdout()).toContain("# writeBack.exclude: config\n");
+    const closing = harness.stdout().split("\n\n").at(-1)?.split("\n") ?? [];
+
+    expect(closing.slice(0, 2)).toEqual([
+      `${harness.userConfigFile} sets workspaceRoot, writeBack.add, writeBack.exclude; every other key has its default value.`,
+      "  Written back:  settings.json: defaultProvider, defaultModel, defaultThinkingLevel, enabledModels, hideThinkingBlock, quietStartup, collapseChangelog, doubleEscapeAction, treeFilterMode, steeringMode, followUpMode",
+    ]);
+    expect(closing.slice(-2)).toEqual(["                 pi-footer.json: layout (from the config)", ""]);
 
     expect(await runPinata(["config", "--json"], harness.deps)).toBe(0);
 
@@ -237,7 +247,7 @@ describe("pinata config", () => {
     await harness.writeJson(harness.userConfigFile, { writeBack: { enabled: false } });
 
     expect(await runPinata(["config"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("# writeBack: nothing is written back to the host\n");
+    expect(harness.stdout()).toMatch(/\n {2}Written back: {2}nothing\n$/);
   });
 
   it("only shows the config and refuses any other option", async () => {
@@ -477,7 +487,7 @@ describe("pinata help and version", () => {
     const listed = harness
       .stdout()
       .split("\n")
-      .map((line) => /^ {2}pinata (\S+)/.exec(line)?.[1])
+      .map((line) => /^pinata (\S+)/.exec(line)?.[1])
       .filter((command) => command !== undefined);
 
     expect([...new Set(listed)]).toEqual([
@@ -535,10 +545,10 @@ describe("pinata help and version", () => {
 
     await runPinata(["help"], harness.deps);
 
-    const lines = harness.stdout().trimEnd().split("\n").slice(1);
+    const lines = harness.stdout().trimEnd().split("\n");
     const rows = await readmeRows();
-    const described = (command: string) => lines.find((line) => line.startsWith(`  ${command}  `));
-    const columns = new Set(lines.map((line) => /^ {2}\S.*?\S {2,}(?=\S)/.exec(line)?.[0].length));
+    const described = (command: string) => lines.find((line) => line.startsWith(`${command}  `));
+    const columns = new Set(lines.map((line) => /^\S.*?\S {2,}(?=\S)/.exec(line)?.[0].length));
 
     expect(rows.flatMap((row) => row.commands).filter((command) => described(command) === undefined)).toEqual(
       [],

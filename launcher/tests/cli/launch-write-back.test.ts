@@ -146,7 +146,9 @@ describe("writing sandbox settings back to the host", () => {
 
     await runPinata(["doctor"], env.harness.deps);
 
-    expect(env.harness.stdout()).toContain("settings.json defaultModel: p/a → p/b written to the host");
+    expect(env.harness.stdout()).toContain(
+      "\nNotices\n  settings.json defaultModel: p/a -> p/b written to the host\n",
+    );
     expect(await env.host("settings.json")).toEqual({ defaultModel: "p/b" });
     expect(JSON.parse((await env.fake.guestFile("settings.json")) ?? "null")).toMatchObject({
       defaultModel: "p/b",

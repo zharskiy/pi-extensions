@@ -23,7 +23,9 @@ import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, lineSink, writeLines
 import { resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
+import { unicodeOf } from "../prompt/terminal.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
+import { glyphsShown } from "../steps.ts";
 import {
   assertMemoryFitsVm,
   assertVmFitsHost,
@@ -100,6 +102,8 @@ const stageSection = (stage: Stage): Section =>
 const withoutPrefix = (line: string) =>
   line.startsWith(NOTICE_PREFIX) ? line.slice(NOTICE_PREFIX.length) : line;
 
+const capitalised = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
 const progressLine = (deps: CliDeps): Progress => {
   if (!isTerminal(deps.stderr) || deps.env.TERM === "dumb") {
     return { line: () => undefined, clear: () => undefined };
@@ -107,12 +111,13 @@ const progressLine = (deps: CliDeps): Progress => {
 
   const state = { shown: false };
   const width = Math.max(1, deps.terminal.columns - 1);
+  const ellipsis = unicodeOf(deps.env) ? "…" : "...";
 
   return {
     line: (text) => {
       state.shown = true;
 
-      deps.stderr.write(`${ERASE_LINE}${`pinata doctor: ${withoutPrefix(text)}`.slice(0, width)}`);
+      deps.stderr.write(`${ERASE_LINE}${`${ellipsis} ${capitalised(withoutPrefix(text))}`.slice(0, width)}`);
     },
     clear: () => {
       if (state.shown) {
@@ -702,6 +707,7 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
       renderReport(checks, noticesOf(notices), {
         verbose: args.includes(VERBOSE_FLAG),
         color: colorOf(deps),
+        unicode: glyphsShown(deps),
         home: deps.home,
         partial,
       }),

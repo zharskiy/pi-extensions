@@ -546,7 +546,7 @@ const savedLine = (facts: HostFacts, plain: boolean) =>
 const saveFailedLine = (file: string, home: string, reason: string) =>
   `✖ Could not save ${shown(file, home)}: ${printable(reason)}`;
 
-const nextCommand = (root: Answers["root"], facts: HostFacts) => {
+export const nextCommand = (root: Answers["root"], facts: HostFacts) => {
   const latest = facts.candidates.find((candidate) => candidate.stored === root)?.latestRepo;
 
   if (latest !== undefined) {

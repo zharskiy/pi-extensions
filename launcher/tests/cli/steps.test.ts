@@ -91,6 +91,24 @@ describe("stepsOf", () => {
     expect(steps.changed()).toBe(false);
   });
 
+  it("continues a row under the value above when its label is empty", () => {
+    const { steps, stdout } = setup(false, UTF8);
+
+    steps.close("The sandbox VM is running.", [
+      ["Sessions", "~/work/a (0123456789ab, running)"],
+      ["", "~/work/b (ba9876543210, exited)"],
+    ]);
+
+    expect(stdout.text()).toBe(
+      [
+        "The sandbox VM is running.",
+        "  Sessions:  ~/work/a (0123456789ab, running)",
+        "             ~/work/b (ba9876543210, exited)",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("shows a pending line on a terminal, redraws it with the time taken and replaces it with the done line", async () => {
     const { steps, stdout, advance } = setup(true, { ...UTF8, NO_COLOR: "1" });
     await steps.task({ pending: "Installing colima", done: "Installed colima" }, async () => {

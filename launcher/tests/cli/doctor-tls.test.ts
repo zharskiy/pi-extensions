@@ -348,7 +348,7 @@ describe("pinata doctor tls inspection", () => {
     await runPinata(["doctor", "--verbose"], harness.deps);
 
     expect(doctorCheck(harness.stdout(), "tls inspection")).toMatchObject({
-      section: "network",
+      section: "Network",
       status: "ok",
       detail: "not inspected",
     });

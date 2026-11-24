@@ -44,24 +44,36 @@ const COMMANDS: Array<[string, string]> = [
   ["pinata stop", "stop the services and the sandbox VM when no pi session runs"],
   [
     "pinata doctor [--verbose]",
-    "prepare the sandbox like pi and report what needs attention by area, with a hint per problem; --verbose lists every check with its detail",
+    "prepare the sandbox like pi and report what needs attention by area, with the fix for each problem; --verbose lists every check with its detail",
   ],
   ["pinata --version", "print the pinata version"],
   ["pinata help", "show this help"],
 ];
 
+const isFor =
+  (command: string) =>
+  ([usage]: [string, string]) =>
+    usage === `pinata ${command}` || usage.startsWith(`pinata ${command} `);
+
 export const usageOf = (command: string) =>
-  COMMANDS.map(([usage]) => usage)
-    .filter((usage) => usage === `pinata ${command}` || usage.startsWith(`pinata ${command} `))
+  COMMANDS.filter(isFor(command))
+    .map(([usage]) => usage)
     .join(" | ");
 
-const WIDTH = Math.max(...COMMANDS.map(([command]) => command.length));
+const tableOf = (rows: Array<[string, string]>) => {
+  const width = Math.max(...rows.map(([command]) => command.length));
+
+  return rows.map(([command, description]) => `${command.padEnd(width)}  ${description}`);
+};
+
+export const printHelp = (deps: CliDeps, command: string) => {
+  writeLines(deps.stdout, tableOf(COMMANDS.filter(isFor(command))));
+
+  return 0;
+};
 
 export const helpCommand = (deps: CliDeps) => {
-  writeLines(deps.stdout, [
-    "usage:",
-    ...COMMANDS.map(([command, description]) => `  ${command.padEnd(WIDTH)}  ${description}`),
-  ]);
+  writeLines(deps.stdout, tableOf(COMMANDS));
 
   return 0;
 };

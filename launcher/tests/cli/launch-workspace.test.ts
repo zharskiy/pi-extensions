@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { pathsOf } from "../../cli/deps.ts";
 import { sandboxReachOf } from "../../cli/host-pi.ts";
 import { run, runPinata } from "../../cli/index.ts";
+import { launcherVersion } from "../../cli/versions.ts";
 import { repoHash, repoRecordOf } from "../../shared/index.ts";
 import { sandboxWriteRoots } from "../../workspace/index.ts";
 import { createFakeBackend, createHarness, type HarnessOptions } from "./harness.ts";
@@ -140,7 +141,7 @@ describe("pi in a project of the workspace root", () => {
     const deps = { ...harness.deps, cwd: harness.work };
 
     expect(await runPinata(["status"], deps)).toBe(0);
-    expect(harness.stdout()).toContain(`folder: ${harness.work}\n`);
+    expect(harness.stdout()).toContain(`Pinata ${await launcherVersion()} for the folder ${harness.work}.\n`);
     expect(await runPinata(["restart"], deps)).toBe(0);
     expect(harness.stdout()).toContain("ok Created the sandbox VM in");
   });

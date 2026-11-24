@@ -204,7 +204,7 @@ describe("a launch starts the stopped sandbox VM", () => {
 
     expect(await runPinata(["status"], status.harness.deps)).toBe(0);
     expect(await sweepNow(gc.harness.deps)).toBe(0);
-    expect(status.harness.stdout()).toContain("runtime: none (the sandbox VM engine is unreachable");
+    expect(status.harness.stdout()).toContain("  Runtime:   the sandbox VM engine is unreachable");
     expect([...status.colimaCalls(), ...gc.colimaCalls()]).toEqual([]);
   });
 });
@@ -413,7 +413,7 @@ describe("pinata stop", () => {
     expect(await runPinata(["stop", "now"], context.harness.deps)).toBe(1);
     expect(await runPinata(["help"], context.harness.deps)).toBe(0);
     expect(context.harness.stderr()).toContain('pinata: unknown stop option "now"\n');
-    expect(context.harness.stdout()).toContain("  pinata stop ");
+    expect(context.harness.stdout()).toMatch(/^pinata stop {2,}stop the services/m);
     expect(context.events).toEqual([]);
   });
 });

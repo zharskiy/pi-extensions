@@ -16,7 +16,7 @@ describe("pinata egress allow", () => {
     expect(await readGrants(harness.stateDir)).toEqual([
       { host: "docs.example.test", port: 443, createdAt: NOW },
     ]);
-    expect(harness.stdout()).toBe("allowed docs.example.test\n");
+    expect(harness.stdout()).toBe("ok Allowed docs.example.test\n");
   });
 
   it("grants a host:port", async () => {
@@ -26,7 +26,7 @@ describe("pinata egress allow", () => {
     expect(await readGrants(harness.stateDir)).toEqual([
       { host: "git.example.test", port: 8443, createdAt: NOW },
     ]);
-    expect(harness.stdout()).toBe("allowed git.example.test:8443\n");
+    expect(harness.stdout()).toBe("ok Allowed git.example.test:8443\n");
   });
 
   it("refuses a host that egress.deny blocks, at any depth under a bare domain, and stores nothing", async () => {
@@ -99,16 +99,28 @@ describe("pinata egress allow targets and arguments", () => {
     const harness = await createHarness();
 
     expect(await runPinata(["egress", "--help"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toMatch(
-      /^usage: pinata egress allow .*\| pinata egress revoke .*\| pinata egress list /,
+    expect(harness.stdout()).toBe(
+      [
+        "pinata egress allow <host[:port]>   allow a host for every session until revoked",
+        "pinata egress revoke <host[:port]>  remove a grant",
+        "pinata egress list [--denied]       the grants, or the hosts the proxy blocked",
+        "",
+      ].join("\n"),
     );
 
-    expect(await runPinata(["egress", "allow", "-h"], harness.deps)).toBe(0);
-    expect(await runPinata(["egress", "revoke", "--help"], harness.deps)).toBe(0);
-    expect(await runPinata(["egress", "list", "-h"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("usage: pinata egress allow <host[:port]>\n");
-    expect(harness.stdout()).toContain("usage: pinata egress revoke <host[:port]>\n");
-    expect(harness.stdout()).toContain("usage: pinata egress list ");
+    const actions = await createHarness();
+
+    expect(await runPinata(["egress", "allow", "-h"], actions.deps)).toBe(0);
+    expect(await runPinata(["egress", "revoke", "--help"], actions.deps)).toBe(0);
+    expect(await runPinata(["egress", "list", "-h"], actions.deps)).toBe(0);
+    expect(actions.stdout()).toBe(
+      [
+        "pinata egress allow <host[:port]>  allow a host for every session until revoked",
+        "pinata egress revoke <host[:port]>  remove a grant",
+        "pinata egress list [--denied]  the grants, or the hosts the proxy blocked",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("grants a host from a folder a launch refuses", async () => {
@@ -131,11 +143,11 @@ describe("pinata egress revoke and list", () => {
     await runPinata(["egress", "allow", "docs.example.test:8443"], harness.deps);
 
     expect(await runPinata(["egress", "revoke", "docs.example.test:8443"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("revoked 1 grant for docs.example.test:8443\n");
+    expect(harness.stdout()).toContain("ok Revoked 1 grant for docs.example.test:8443\n");
     expect(await runPinata(["egress", "revoke", "docs.example.test"], harness.deps)).toBe(0);
     expect(await readGrants(harness.stateDir)).toEqual([]);
     expect(await runPinata(["egress", "revoke", "other.example.test"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("revoked 0 grants for other.example.test\n");
+    expect(harness.stdout()).toContain("No grant for other.example.test.\n");
   });
 
   it("refuses an unknown list option", async () => {
@@ -175,15 +187,13 @@ describe("pinata egress revoke and list", () => {
     });
 
     expect(await runPinata(["egress", "list", "--denied"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe(
-      `denied blocked.example.test at ${new Date(NOW).toISOString()}: not allowed\n`,
-    );
+    expect(harness.stdout()).toBe(`blocked.example.test at ${new Date(NOW).toISOString()}: not allowed\n`);
   });
 
   it("says when there is nothing to list", async () => {
     const harness = await createHarness();
 
     expect(await runPinata(["egress", "list"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe("no active grants\n");
+    expect(harness.stdout()).toBe("No grants.\n");
   });
 });

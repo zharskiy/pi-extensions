@@ -272,9 +272,9 @@ describe("pinata install", () => {
     expect(await pinata.run("uninstall", "--help")).toBe(0);
     expect(pinata.harness.stdout()).toBe(
       [
-        "usage: pinata install [--config <file>] [--yes]",
-        "usage: pinata update [<version>]",
-        "usage: pinata uninstall [--sandbox]",
+        "pinata install [--config <file>] [--yes]  set up pinata's package in host pi, the pi link, PATH and the sandbox VM; needs pi installed on the host, --config writes that file as the config, --yes asks nothing",
+        "pinata update [<version>]  install that pinata version with npm (latest without one), then its pinata install --yes",
+        "pinata uninstall [--sandbox]  remove the sandbox VM, pinata's state, its links, its PATH block and its package in host pi; your config, sessions, pi and colima stay; --sandbox removes only the sandbox VM, the pi link and pinata's state, so pi runs host pi",
         "",
       ].join("\n"),
     );

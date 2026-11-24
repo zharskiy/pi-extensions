@@ -1,7 +1,6 @@
 import type { VmPhase } from "../../backend/index.ts";
 import { errorMessage, LauncherError } from "../../shared/index.ts";
-import { asciiOf, elapsedOf } from "../prompt/style.ts";
-import { heartbeat } from "../prompt/task.ts";
+import { elapsedOf } from "../prompt/style.ts";
 import { Cancelled, type NotePlace, type Timers } from "../prompt/types.ts";
 import type { Steps } from "../steps.ts";
 import { tildeForm } from "./folders.ts";
@@ -113,57 +112,10 @@ const failedChoice = async (io: SetupIo, facts: HostFacts, failure: VmFailure) =
 
 export const wizardFrontEnd = (io: SetupIo, facts: HostFacts): ApplyFrontEnd => ({
   now: io.now,
-  review: () => undefined,
   report: drawEvent(io, facts),
   task: (spec) => io.prompts.task({ title: VM_TITLE, ...spec }),
   retry: (failure) => failedChoice(io, facts, failure),
 });
-
-interface LineStreams {
-  out: NodeJS.WritableStream;
-  err: NodeJS.WritableStream;
-  timers: Timers;
-}
-
-const printed = (stream: NodeJS.WritableStream, paragraphs: Paragraph[]) => {
-  stream.write(
-    wrapped(paragraphs, Number.POSITIVE_INFINITY)
-      .map((line) => `${asciiOf(line)}\n`)
-      .join(""),
-  );
-};
-
-export const lineFrontEnd = (streams: LineStreams, facts: HostFacts, review: string[]): ApplyFrontEnd => {
-  const report = (event: ApplyEvent) => {
-    printed(PROBLEMS.has(event.kind) ? streams.err : streams.out, eventLines(event, facts, true));
-  };
-
-  const task = async (spec: Parameters<ApplyFrontEnd["task"]>[0]) => {
-    const stop = heartbeat(streams.timers, (line) => printed(streams.out, [line]));
-
-    try {
-      return await spec.run((text) => printed(streams.out, [text]));
-    } finally {
-      stop();
-    }
-  };
-
-  return {
-    now: streams.timers.now,
-    review: () => printed(streams.out, review),
-    report,
-    task,
-    retry: async (failure, error) => {
-      if (!(error instanceof LauncherError)) {
-        throw error;
-      }
-
-      report(failure);
-
-      return false;
-    },
-  };
-};
 
 const QUIET_EVENTS = new Set<ApplyEvent["kind"]>(["nothing-to-do", "nothing-changed", "done"]);
 
@@ -195,6 +147,14 @@ export const stepsFrontEnd = (steps: Steps, facts: HostFacts, timers: Timers): A
 
     const [first = "", ...rest] = eventLines(event, facts, true).map(textOf);
 
+    if (first.startsWith("▲ ")) {
+      steps.warn(first.slice(2));
+
+      rest.forEach(steps.note);
+
+      return;
+    }
+
     if (PROBLEMS.has(event.kind)) {
       steps.failed(first.replace(/^✖ /, ""), rest.join("\n"));
 
@@ -206,7 +166,6 @@ export const stepsFrontEnd = (steps: Steps, facts: HostFacts, timers: Timers): A
 
   return {
     now: timers.now,
-    review: () => undefined,
     report,
     task: (spec) => steps.task({ pending: "Preparing the sandbox VM" }, spec.run),
     retry: async (failure, error) => {
@@ -321,8 +280,6 @@ export const applyPlan = async (
 
     return 0;
   }
-
-  front.review();
 
   const saved = chosen.plan.changes.length === 0 || (await savePlan(front, effects, document, chosen.plan));
 
