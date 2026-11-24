@@ -1,6 +1,6 @@
 export const globalRecord = <T>(name: string, init: () => T): T => {
   const store = globalThis as Record<symbol, unknown>;
-  const key = Symbol.for(`pi-extensions.${name}`);
+  const key = Symbol.for(`pinata.${name}`);
 
   store[key] ??= init();
 

@@ -1,12 +1,12 @@
 <div align="center">
 
-# pi-extensions
+# pinata
 
 **Background agents, session awareness and a calmer terminal for the [pi coding agent](https://pi.dev).**
 
 Fifteen extensions in one pi package (`@zharskiy/pinata`), built on one small shared platform.
 
-[![CI](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml)
+[![CI](https://github.com/zharskiy/pinata/actions/workflows/ci.yml/badge.svg)](https://github.com/zharskiy/pinata/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [Quick start](#quick-start) · [Sandbox launcher](#sandbox-launcher) · [Development](#development) · [Contributing and licence](#contributing-and-licence)
@@ -42,8 +42,8 @@ Tool rows from [transcript](extensions/transcript/README.md), an agent batch fro
 
 ```bash
 pi install npm:@zharskiy/pinata                    # the whole package, without the sandbox; pi update --extensions updates it
-pi install ./pi-extensions                         # from a local checkout; add -l for the current project only
-pi -e ./pi-extensions/extensions/<name>/index.ts   # one extension for a single run, from a checkout; git pull, then /reload in pi
+pi install ./pinata                                # from a local checkout; add -l for the current project only
+pi -e ./pinata/extensions/<name>/index.ts          # one extension for a single run, from a checkout; git pull, then /reload in pi
 ```
 
 To run pi in the sandbox with them, install with `pinata` instead ([Install, update and uninstall](#install-update-and-uninstall)).

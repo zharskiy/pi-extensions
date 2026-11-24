@@ -4,7 +4,7 @@
 
 **A rotating verb and the elapsed time of the current prompt, in place of pi's plain `Working...`.**
 
-Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
+Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
 </div>
 
@@ -24,7 +24,7 @@ The working line, drawn inside the input's top line while a prompt runs:
 
 ```bash
 pi install npm:@zharskiy/pinata                    # the whole package
-pi -e ./pi-extensions/extensions/working-indicator/index.ts   # this extension alone, from a checkout
+pi -e ./pinata/extensions/working-indicator/index.ts   # this extension alone, from a checkout
 ```
 
 Send a prompt in the interactive TUI:
@@ -50,4 +50,4 @@ The full set of commands is in the root README's [Development](../../README.md#d
 
 ## Contributing
 
-Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
+Issues and pull requests at [github.com/zharskiy/pinata](https://github.com/zharskiy/pinata) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.

@@ -4,7 +4,7 @@ export const CODEMODE_WORKERS_SETTING = "PI_CODEMODE_MAX_WORKERS";
 
 const SPARE_WORKERS = 2;
 
-const OWNED_KEY = Symbol.for("pi-extensions.codemode-workers");
+const OWNED_KEY = Symbol.for("pinata.codemode-workers");
 
 const shared = globalThis as typeof globalThis & { [OWNED_KEY]?: string };
 

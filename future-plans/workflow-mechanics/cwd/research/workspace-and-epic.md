@@ -104,7 +104,7 @@ Tags are free text the planner reads ("backend", "frontend", "tests"), never int
 
 B also can carry a free-text `notes` file or rely on `master/AGENTS.md` for the prose that C would hold.
 
-## 6. Changes this implies for pi-extensions (for later, not now)
+## 6. Changes this implies for pinata (for later, not now)
 
 1. `run_agent` gains an optional `cwd` per item, limited to paths inside the declared workspace, so an agent can run in `workbench/<epic>/<repo>` and pick up that repo's context files and project config (subject to project trust).
 2. A new extension or subagents plugin owning `/workspace setup` and `/epic new|worktrees|status|close`; worktree creation and cleanup are harness code, not agent shell commands.

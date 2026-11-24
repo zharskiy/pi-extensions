@@ -2,7 +2,7 @@
 
 Research date: 2026-11-16, against Claude Code 2.1.325, its live docs and changelog, the Claude API docs and published community measurements. Status: researched, nothing planned yet.
 
-Question: which features does Claude Code have that help users cut token use and spend, or audit and tune their own setup, and which of them are worth building into pi-extensions?
+Question: which features does Claude Code have that help users cut token use and spend, or audit and tune their own setup, and which of them are worth building into pinata?
 
 Answer in short:
 
@@ -10,7 +10,7 @@ Answer in short:
 - Deferring tool definitions is the best-evidenced token saving after caching. pi already does it (`tool_search`, codemode).
 - The heavily marketed tricks measured far below their claims: output-filtering proxies gave no reliable cost saving, and terse-output prompting cut about 8.5% of output tokens, not 65%.
 - Claude Code's audit features (`/usage` attribution with recommendations and a fix key, `/context` suggestions, `/doctor`, `/skill-doctor`, startup size warnings) are mostly static and cheap. Their best ideas carry over to this repository without a model call.
-- pi-extensions already covers context size, handoff, model choice per agent and per-session cost. It is missing cache-miss visibility, a waste audit, spend limits and a usage breakdown.
+- pinata already covers context size, handoff, model choice per agent and per-session cost. It is missing cache-miss visibility, a waste audit, spend limits and a usage breakdown.
 
 Recommendation: build three small things first, all on the existing adapter surface: a cache-miss line with a likely cause, waste hints under `/context`, and a prompt-size budget test for our own prompts. Spend notices come next. The other candidates wait for the owner's decisions and, in two cases, for new adapter Host methods.
 
@@ -75,9 +75,9 @@ Condensed. Detail, versions and sources are in the research files.
 
 The design pattern worth copying is the split between three layers: static warnings that cost nothing, a local report that ranks causes by share and labels each as auto-fixable or advisory, and a model-driven checkup reserved for edits that need judgement ([setup-diagnostics](research/setup-diagnostics.md) 8).
 
-## Where pi-extensions stands
+## Where pinata stands
 
-From [pi-extensions-baseline](research/pi-extensions-baseline.md). "Pi" means pi's own features, which this repository does not own.
+From [pinata-baseline](research/pinata-baseline.md). "Pi" means pi's own features, which this repository does not own.
 
 ### Reducing tokens and spend
 
@@ -235,4 +235,4 @@ Merged from the fact sheets, limited to what bears on a decision.
 - [setup-diagnostics.md](research/setup-diagnostics.md): `/usage`, `/context`, `/doctor`, `/skill-doctor`, status line fields, automatic warnings, official guidance.
 - [binary-and-changelog.md](research/binary-and-changelog.md): flags, environment variables and settings keys in the 2.1.325 binary; changelog by theme.
 - [community-and-api.md](research/community-and-api.md): community tools with independent measurements, known cost traps, Claude API features and their portability.
-- [pi-extensions-baseline.md](research/pi-extensions-baseline.md): what this repository and pi already do per theme, and the AGENTS.md constraints.
+- [pinata-baseline.md](research/pinata-baseline.md): what this repository and pi already do per theme, and the AGENTS.md constraints.

@@ -34,7 +34,7 @@ The release PR is opened with the workflow's own token, so GitHub holds its `ci`
    npm publish
    ```
 
-5. **Add the trusted publisher.** npmjs.com, `@zharskiy/pinata`, Settings, Trusted publishing, GitHub Actions: user `zharskiy`, repository `pi-extensions`, workflow `release.yml`, no environment, and allow `npm publish`. The fields are case-sensitive. Or, with npm 11.15.0 or newer: `npm trust github @zharskiy/pinata --file release.yml --repo zharskiy/pi-extensions --allow-publish`. Do this shortly before you merge the next release PR: npm drops a trusted publisher that has not published within 2 days.
+5. **Add the trusted publisher.** npmjs.com, `@zharskiy/pinata`, Settings, Trusted publishing, GitHub Actions: user `zharskiy`, repository `pinata`, workflow `release.yml`, no environment, and allow `npm publish`. The fields are case-sensitive. Or, with npm 11.15.0 or newer: `npm trust github @zharskiy/pinata --file release.yml --repo zharskiy/pinata --allow-publish`. Do this shortly before you merge the next release PR: npm drops a trusted publisher that has not published within 2 days.
 6. After the next release has published from the workflow, set the package's Publishing access to "Require two-factor authentication and disallow tokens".
 
 ## When publishing fails

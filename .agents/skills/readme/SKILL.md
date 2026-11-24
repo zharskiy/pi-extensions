@@ -11,7 +11,7 @@ A README here answers two questions for a reader who has not opened the code: wh
 
 Every README under `extensions/<name>/` has exactly these parts and nothing else. `extensions/spending/README.md` is the exemplar: read it before writing, and shape yours on it rather than on this description.
 
-1. **Header**. Inside `<div align="center">`: a `# name` heading with the folder name, one bold sentence that says what the extension does for the user, then the nav line `Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)`. The pitch is the sentence the root README reuses in its extension list, so write it to stand alone.
+1. **Header**. Inside `<div align="center">`: a `# name` heading with the folder name, one bold sentence that says what the extension does for the user, then the nav line `Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)`. The pitch is the sentence the root README reuses in its extension list, so write it to stand alone.
 2. **Why**. Two to five sentences on the gap in plain pi and what this extension puts there. Present tense, as the extension is today. No history, no roadmap.
 3. **What it looks like**. One fenced block of what the user actually sees: the footer segment, the overlay, the command's output, the transcript rows. Real output, trimmed, not a feature list and not a screenshot. Fence it with plain backticks, no language tag.
 4. **Quick start**. The two install lines in a `bash` block (the whole package, then this extension alone from a checkout, with the extension's own path), then a one-line lead-in (usually `Start pi and try:`; name a precondition instead when there is one) and a `| Try | What you see |` table with two to four rows. Each row is one thing to do and the visible result. Commands belong here only as things to try; the moment the table starts listing every flag it has become a reference and belongs in ARCHITECTURE.md. A `<details>` block for prerequisites is fine when the extension needs something outside pi (see `extensions/mcp-import/README.md`).
@@ -27,7 +27,7 @@ Skeleton, with the fixed text in place:
 
 **<one sentence: what it does for the user>**
 
-Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
+Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
 </div>
 
@@ -45,7 +45,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ```bash
 pi install npm:@zharskiy/pinata                    # the whole package
-pi -e ./pi-extensions/extensions/<name>/index.ts   # this extension alone, from a checkout
+pi -e ./pinata/extensions/<name>/index.ts   # this extension alone, from a checkout
 ```
 
 Start pi and try:
@@ -65,7 +65,7 @@ The full set of commands is in the root README's [Development](../../README.md#d
 
 ## Contributing
 
-Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
+Issues and pull requests at [github.com/zharskiy/pinata](https://github.com/zharskiy/pinata) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
 ````
 ## What stays out, and where it goes
 

@@ -3,7 +3,7 @@
 Where things are at the top level. Each code folder has its own `STRUCTURE.md` with one line per file; the rules are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```
-pi-extensions/
+pinata/
 ├── platform/
 │   ├── pi-adapter/          the only shipped code that imports pi packages; `tools/` also holds the skill-read detection
 │   ├── shared/              pi-free, theme-free, host-free helpers

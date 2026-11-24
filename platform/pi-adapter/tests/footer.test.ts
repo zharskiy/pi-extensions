@@ -9,7 +9,7 @@ import { createFooterSetter, FOOTER_WIDGET_KEY, footerHost } from "../ui/footer.
 import { createNotices, NOTICE_WIDGET_KEY, syncNotices } from "../ui/notices.ts";
 import type { HostState } from "../ui/tui-context.ts";
 
-const NOTICES_KEY = Symbol.for("pi-extensions.notices");
+const NOTICES_KEY = Symbol.for("pinata.notices");
 
 afterEach(() => {
   delete (globalThis as Record<symbol, unknown>)[NOTICES_KEY];

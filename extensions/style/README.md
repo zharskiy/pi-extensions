@@ -4,7 +4,7 @@
 
 **Switches the output style of the main session with one command.**
 
-Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
+Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
 </div>
 
@@ -31,7 +31,7 @@ The list `/style` opens in place of the editor, the current style marked `✓` a
 
 ```bash
 pi install npm:@zharskiy/pinata                    # the whole package
-pi -e ./pi-extensions/extensions/style/index.ts   # this extension alone, from a checkout
+pi -e ./pinata/extensions/style/index.ts   # this extension alone, from a checkout
 ```
 
 Pick a style in the interactive TUI:
@@ -54,4 +54,4 @@ The full set of commands is in the root README's [Development](../../README.md#d
 
 ## Contributing
 
-Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
+Issues and pull requests at [github.com/zharskiy/pinata](https://github.com/zharskiy/pinata) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.

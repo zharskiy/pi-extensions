@@ -1179,7 +1179,7 @@ describe("pi adapter", () => {
 
 describe("editor hooks boot order", () => {
   afterEach(() => {
-    delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.editor-hooks")];
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for("pinata.editor-hooks")];
   });
 
   it.each([

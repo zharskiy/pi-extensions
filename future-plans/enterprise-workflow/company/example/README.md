@@ -1,6 +1,6 @@
 # acme-pi: an example company package
 
-An example of what a company builds on top of pi-extensions. Nothing here is loaded by the harness on its own: it is a pi package (skills) plus agent files, templates and one script. Replace "Acme", the tracker words and the departments with your own.
+An example of what a company builds on top of pinata. Nothing here is loaded by the harness on its own: it is a pi package (skills) plus agent files, templates and one script. Replace "Acme", the tracker words and the departments with your own.
 
 ## What is in it
 

@@ -2,7 +2,7 @@
 
 Run the pi coding agent on your Mac as you always do, with the agent kept in a sandbox.
 
-Part of [pi-extensions](../README.md).
+Part of [pinata](../README.md).
 
 ## What it does
 
@@ -103,8 +103,8 @@ A config whose `workspaceRoot` names another folder stops `--yes` (a trailing `/
 <summary>Install from a checkout</summary>
 
 ```bash
-git clone https://github.com/zharskiy/pi-extensions.git
-cd pi-extensions
+git clone https://github.com/zharskiy/pinata.git
+cd pinata
 npm install
 node launcher/bin/pinata-dev.js install
 ```
