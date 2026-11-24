@@ -6,8 +6,7 @@
 
 Fifteen extensions in one pi package (`@zharskiy/pinata`), built on one small shared platform.
 
-[![CI](https://github.com/zharskiy/pinata/actions/workflows/ci.yml/badge.svg)](https://github.com/zharskiy/pinata/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@zharskiy/pinata)](https://www.npmjs.com/package/@zharskiy/pinata)
 
 [Quick start](#quick-start) · [Sandbox](#sandbox) · [Development](#development) · [Contributing and licence](#contributing-and-licence)
 
