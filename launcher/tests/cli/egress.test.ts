@@ -95,32 +95,16 @@ describe("pinata egress allow targets and arguments", () => {
     expect(harness.stderr()).toContain("egress allow: takes one host, got a.test b.test");
   });
 
-  it("prints the usage of egress and of each action for -h and --help", async () => {
+  it("prints the full help for -h and --help on egress and on each action", async () => {
+    const reference = await createHarness();
     const harness = await createHarness();
 
+    expect(await runPinata(["help"], reference.deps)).toBe(0);
     expect(await runPinata(["egress", "--help"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe(
-      [
-        "pinata egress allow <host[:port]>   allow a host for every session until revoked",
-        "pinata egress revoke <host[:port]>  remove a grant",
-        "pinata egress list [--denied]       the grants, or the hosts the proxy blocked",
-        "",
-      ].join("\n"),
-    );
-
-    const actions = await createHarness();
-
-    expect(await runPinata(["egress", "allow", "-h"], actions.deps)).toBe(0);
-    expect(await runPinata(["egress", "revoke", "--help"], actions.deps)).toBe(0);
-    expect(await runPinata(["egress", "list", "-h"], actions.deps)).toBe(0);
-    expect(actions.stdout()).toBe(
-      [
-        "pinata egress allow <host[:port]>  allow a host for every session until revoked",
-        "pinata egress revoke <host[:port]>  remove a grant",
-        "pinata egress list [--denied]  the grants, or the hosts the proxy blocked",
-        "",
-      ].join("\n"),
-    );
+    expect(await runPinata(["egress", "allow", "-h"], harness.deps)).toBe(0);
+    expect(await runPinata(["egress", "revoke", "--help"], harness.deps)).toBe(0);
+    expect(await runPinata(["egress", "list", "-h"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toBe(reference.stdout().repeat(4));
   });
 
   it("grants a host from a folder a launch refuses", async () => {

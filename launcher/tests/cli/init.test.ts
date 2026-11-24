@@ -129,7 +129,6 @@ describe("pinata init without a terminal", () => {
 
     expect(await runPinata(["init", "extra"], harness.deps)).toBe(1);
     expect(harness.stderr()).toBe('pinata: unknown init option "extra"\n  hint: pinata init [--yes]\n');
-    expect(await runPinata(["init", "--help"], harness.deps)).toBe(0);
     expect(await runPinata(["help"], harness.deps)).toBe(0);
     expect(
       harness
@@ -137,7 +136,6 @@ describe("pinata init without a terminal", () => {
         .split("\n")
         .filter((line) => line.startsWith("pinata init ")),
     ).toEqual([
-      "pinata init [--yes]  set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
       "pinata init [--yes]                       set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
     ]);
   });

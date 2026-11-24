@@ -4,7 +4,7 @@ import { LauncherError } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, writeLines } from "../deps.ts";
 import { stepsOf } from "../steps.ts";
-import { printHelp, usageOf } from "./help.ts";
+import { usageOf } from "./help.ts";
 import { assertOptions } from "./options.ts";
 
 interface Target {
@@ -13,8 +13,6 @@ interface Target {
 }
 
 const DENIED_FLAG = "--denied";
-
-const HELP_FLAGS = ["-h", "--help"];
 
 const usage = (problem: string) => new LauncherError(problem, usageOf("egress"));
 
@@ -133,22 +131,10 @@ const ACTIONS: Record<string, (deps: CliDeps, args: string[]) => Promise<number>
 export const egressCommand = (deps: CliDeps, args: string[]) => {
   const [action = "", ...rest] = args;
 
-  if (HELP_FLAGS.includes(action)) {
-    printHelp(deps, "egress");
-
-    return Promise.resolve(0);
-  }
-
   const run = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : undefined;
 
   if (run === undefined) {
     throw usage(`unknown egress action "${action}"`);
-  }
-
-  if (rest.some((arg) => HELP_FLAGS.includes(arg))) {
-    printHelp(deps, `egress ${action}`);
-
-    return Promise.resolve(0);
   }
 
   return run(deps, rest);

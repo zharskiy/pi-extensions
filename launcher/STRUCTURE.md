@@ -89,7 +89,7 @@ cli/commands/doctor-report.ts  the pure text renderer of the checks: the ✔ ▲
 cli/commands/doctor-view.ts    which rows the report prints: every check with --verbose, else the merged groups carrying their members' reasons, the checks quiet when ok left out unless they carry a reason, a failing configured rule's id, the passing rules collapsed into logins or credential hosts
 cli/commands/doctor-tls.ts     the tls inspection checks: the node handshake to pi.dev on the host and in the container, the keychain lookup of the root CA, the outcomes
 cli/commands/tls-probe.ts      the typed TLS handshake script those checks run as their own node process: request on stdin, chain and verdicts on stdout
-cli/commands/help.ts           the command table, all of it for help and the rows of one command for --help, and the usage the error hints quote
+cli/commands/help.ts           the command table, printed whole for help and every --help, and the usage the error hints quote
 cli/commands/options.ts        the option check of the sandbox commands and egress
 cli/pinata/run.ts              pinata: the one command table, install, update and uninstall and the sandbox commands, with their flags
 cli/pinata/host.ts             the package name, the preflight (root, Node, colima installed with brew when missing), host pi run captured, the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json

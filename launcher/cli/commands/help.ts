@@ -66,12 +66,6 @@ const tableOf = (rows: Array<[string, string]>) => {
   return rows.map(([command, description]) => `${command.padEnd(width)}  ${description}`);
 };
 
-export const printHelp = (deps: CliDeps, command: string) => {
-  writeLines(deps.stdout, tableOf(COMMANDS.filter(isFor(command))));
-
-  return 0;
-};
-
 export const helpCommand = (deps: CliDeps) => {
   writeLines(deps.stdout, tableOf(COMMANDS));
 

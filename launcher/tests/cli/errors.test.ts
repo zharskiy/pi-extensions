@@ -54,20 +54,15 @@ describe("error rendering", () => {
     expect(harness.stderr()).toBe('pinata: unknown status option "--all"\n  hint: pinata status\n');
   });
 
-  it("prints a command's usage for -h or --help in any position and runs nothing", async () => {
+  it("prints the full help for -h or --help in any position and runs nothing", async () => {
+    const reference = await createHarness();
     const harness = await createHarness();
 
+    expect(await runPinata(["help"], reference.deps)).toBe(0);
     expect(await runPinata(["config", "--json", "--help"], harness.deps)).toBe(0);
     expect(await runPinata(["restart", "-h"], harness.deps)).toBe(0);
     expect(await runPinata(["status", "--help"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe(
-      [
-        "pinata config [--json]  the effective config and whether each key comes from the config file or the default",
-        "pinata restart  delete the sandbox VM with everything in it and create it again, once no pi session runs; the next pi rebuilds the image and reinstalls your extensions",
-        "pinata status  runtime, services, container, proxy, image, launches, grants, overlays, volumes",
-        "",
-      ].join("\n"),
-    );
+    expect(harness.stdout()).toBe(reference.stdout().repeat(3));
     expect(harness.stderr()).toBe("");
   });
 
