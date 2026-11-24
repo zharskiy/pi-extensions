@@ -8,8 +8,8 @@ import { createPinata, writePackages } from "./support.ts";
 
 const RUNNING: VmInspect = { state: "running", size: { cpus: 4, memoryGiB: 8, diskGiB: 60 }, shares: [] };
 
-const installed = async (global: boolean) => {
-  const pinata = await createPinata({ global, vm: { inspect: async () => RUNNING } });
+const installed = async (global: boolean, hostPi?: false) => {
+  const pinata = await createPinata({ global, hostPi, vm: { inspect: async () => RUNNING } });
   const zshrc = join(pinata.home, ".zshrc");
   const own = global ? "npm:@zharskiy/pinata@0.3.0" : pinata.packageDir;
 
@@ -111,6 +111,48 @@ describe("pinata uninstall", () => {
       ].join("\n"),
     );
     expect(pinata.harness.stderr()).toBe("");
+  });
+
+  it("finishes without a host pi and leaves pinata's extensions listed in pi's settings", async () => {
+    const pinata = await installed(false, false);
+
+    expect(await pinata.run("uninstall")).toBe(0);
+    expect(pinata.harness.stdout()).toBe(
+      [
+        "ok Removed the sandbox VM and its data",
+        "ok Removed pinata's pi link (~/.local/bin/pi)",
+        "! pi is not installed, so pinata's extensions stay listed in pi's settings (~/.pi/agent/settings.json)",
+        "ok Removed the PATH block from ~/.zshrc",
+        "ok Removed pinata's state",
+        "",
+        "Pinata is uninstalled. Kept on purpose:",
+        `  Settings:     ${pinata.harness.userConfigFile}`,
+        "  pi sessions:  ~/.pi/agent/sessions",
+        "  pi, colima:   remove them yourself if you no longer need them",
+        "",
+      ].join("\n"),
+    );
+    expect(pinata.harness.stderr()).toBe("");
+    expect(await pinata.packages()).toEqual([pinata.packageDir, "npm:other"]);
+  });
+
+  it("does not say pi runs on the host again when the host has no pi", async () => {
+    const pinata = await installed(false, false);
+
+    expect(await pinata.run("uninstall", "--sandbox")).toBe(0);
+    expect(pinata.harness.stdout()).toBe(
+      [
+        "ok Removed the sandbox VM and its data",
+        "ok Removed pinata's pi link (~/.local/bin/pi)",
+        "ok Removed pinata's state",
+        "",
+        "The sandbox is uninstalled. Kept on purpose:",
+        "  Extensions:  pinata's extensions stay loaded in pi",
+        `  Settings:    ${pinata.harness.userConfigFile}`,
+        "  Bring back:  pinata install",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("does not say pi runs on the host again when it cannot put pi's own link back", async () => {

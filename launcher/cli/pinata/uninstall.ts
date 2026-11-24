@@ -4,6 +4,7 @@ import { ENGINE_PROFILE } from "../../backend/index.ts";
 import { LauncherError, lstatOrUndefined, realOrResolved, stateLayout } from "../../shared/index.ts";
 import { releaseSandbox } from "../commands/uninstall.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
+import { resolveJobPi } from "../host-pi.ts";
 import { runQuietly, type Steps, stepsOf, tilde } from "../steps.ts";
 import { hostPiQuietly, PACKAGE, piSources, refuseBusy } from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
@@ -54,6 +55,14 @@ const removeExtensions = async (deps: CliDeps, steps: Steps, packageDir: string)
   );
 
   if (own.length === 0) {
+    return;
+  }
+
+  if ((await resolveJobPi(deps)) === undefined) {
+    const settings = tilde(deps, join(hostAgentDirOf(deps), "settings.json"));
+
+    steps.warn(`pi is not installed, so pinata's extensions stay listed in pi's settings (${settings})`);
+
     return;
   }
 
@@ -120,12 +129,12 @@ export const uninstall = async (deps: CliDeps, packageDir: string, sandboxOnly: 
 
   await removeSandbox(deps, steps);
 
-  const hostPi = await removeShim(deps, steps);
+  const restored = await removeShim(deps, steps);
 
   if (sandboxOnly) {
     await removeState(deps, steps);
 
-    closeSandboxOnly(deps, steps, hostPi);
+    closeSandboxOnly(deps, steps, restored && (await resolveJobPi(deps)) !== undefined);
 
     return 0;
   }
