@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmInspect } from "../../../backend/index.ts";
-import { stateLayout } from "../../../shared/index.ts";
+import { LauncherError, stateLayout } from "../../../shared/index.ts";
 import { exists } from "../../support/temp-dir.ts";
 import { createPinata, writePackages } from "./support.ts";
 
@@ -159,18 +159,17 @@ describe("pinata uninstall", () => {
     expect(await exists(join(pinata.harness.hostAgentDir, "bin", "pi"))).toBe(true);
   });
 
-  it("stops before the VM is deleted when releasing the sandbox fails, and names the way out", async () => {
+  it("keeps the VM when releasing the sandbox fails", async () => {
     const pinata = await installed(false);
-    const failing = pinata.harness.deps.backend();
 
-    pinata.harness.deps.backend = () => ({
-      ...failing,
-      findContainers: () => Promise.reject(new Error("engine broke")),
-    });
+    pinata.harness.deps.proxy = {
+      ...pinata.harness.deps.proxy,
+      stop: () => Promise.reject(new LauncherError("proxy would not stop")),
+    };
 
     expect(await pinata.run("uninstall")).toBe(1);
     expect(pinata.harness.stderr()).toContain(
-      "pinata: engine broke\n  hint: colima delete --profile pinata --force --data removes the VM",
+      "x Could not remove the sandbox VM\npinata: proxy would not stop\n",
     );
     expect(pinata.lines()).not.toContain("colima delete --profile pinata --force --data");
     expect(await exists(pinata.shim)).toBe(true);

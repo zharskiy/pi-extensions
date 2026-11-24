@@ -39,7 +39,7 @@ const COMMANDS: Array<[string, string]> = [
   ["pinata egress list [--denied]", "the grants, or the hosts the proxy blocked"],
   [
     "pinata restart",
-    "remove the sandbox's containers, volumes and images and restart the VM, once no pi session runs; the next pi rebuilds them, and it asks first when service data or sandbox sessions would go",
+    "delete the sandbox VM with everything in it and create it again, once no pi session runs; the next pi rebuilds the image and reinstalls your extensions",
   ],
   ["pinata stop", "stop the services and the sandbox VM when no pi session runs"],
   [

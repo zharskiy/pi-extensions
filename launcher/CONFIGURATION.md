@@ -79,7 +79,7 @@ The file applies to every pi you start in the sandbox, in every folder. There ar
 | `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` | The size of the VM itself, which every container shares ([below](#vm-size)). | the size the VM was created with; set by `pinata init` |
 | `vm.releaseFileCache` | While pi runs, drop the VM's file cache before your Mac runs short of open files ([below](#file-cache)). | `true` |
 | `writeBack` | Which settings changed inside come back to your Mac ([below](#settings-written-back)); `pinata init` sets `writeBack.enabled`. | the built-in list |
-| `sessions.host` | Keep sessions in host pi's own session folder. Off, they stay in the one pi folder every folder's sandbox shares, and `pinata restart` removes them with it, after asking. | `true` |
+| `sessions.host` | Keep sessions in host pi's own session folder. Off, they stay in the one pi folder every folder's sandbox shares, and `pinata restart` deletes them with it, without asking. | `true` |
 | `terminal.clipboard` | On a Mac, put what pi inside copies (OSC 52) on the clipboard with `pbcopy`, copy a pasted image path into the sandbox, and paste a clipboard PNG or a single copied image file on Ctrl+V. | `true` |
 | `workspaceRoot` | The folder that holds your projects: pi starts only inside it, and, with the bind sources, it is the only project folder the VM shares ([below](#workspace-root)); set by `pinata init`. Required to launch. | not set: pi does not start |
 
@@ -216,7 +216,7 @@ Your home inside the sandbox lives in memory, so tool caches are lost when pi ex
 
 Every sandbox can write to a user volume, so a bad package written in one folder reaches the others. Use user volumes for package caches only.
 
-A user volume stays until `pinata restart` or the uninstall; the daily cleanup never removes it. `pinata restart` removes it without asking, since it counts as a package cache, unless a service in the config names it too: then it asks first, as for any service data.
+A user volume stays until `pinata restart` or the uninstall, which delete it with the VM; the daily cleanup never removes it.
 
 ### Read-only binds
 
@@ -324,7 +324,7 @@ How it works:
 - Before the first service starts, the pod hands each volume's root folder to the service's `user`.
 - A later session, in any folder, reuses the running services, checks again that each is ready, and starts again only those that exited, unless the services changed (below). Services are never restarted in place.
 - When the last pi session of pinata's state folder ends, the services stop together, each with 30 seconds to exit, and then the pod is removed. `pinata stop` and the uninstall stop them too when no session runs. When another pi command holds the lock for that work, the end of a session waits and prints `waiting for another pinata command to finish before cleaning up; Ctrl-C skips the cleanup`; Ctrl-C ends the wait.Volumes stay.
-- `pinata restart` removes the services with the rest of the sandbox, and their volumes with them. It lists the data that would go and asks first, and refuses while a pi session runs in the sandbox VM.
+- `pinata restart` deletes the services with the rest of the sandbox VM, and their volumes with them, without asking. It refuses while a pi session runs in the sandbox VM.
 - `pinata status` lists each service with its state and ports. `pinata doctor` starts no service.
 
 Some things to know:

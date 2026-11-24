@@ -1,82 +1,79 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LABELS, networkName } from "../../backend/index.ts";
+import { LABELS } from "../../backend/index.ts";
 import { releaseSandbox } from "../../cli/commands/uninstall.ts";
-import { sha256Hex, stateLayout } from "../../shared/index.ts";
-import { FAKE_NETWORK } from "../support/fake-backend.ts";
-import { exists, tempDir } from "../support/temp-dir.ts";
+import { sha256Hex, stateLayout, withFileLock } from "../../shared/index.ts";
+import { exists } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
 
+const tracked = () => {
+  const runs = { count: 0 };
+
+  const teardown = async () => {
+    runs.count += 1;
+  };
+
+  return { runs, teardown };
+};
+
+const otherSession = (fake: ReturnType<typeof createFakeBackend>) =>
+  fake.addContainer({
+    name: "pinata-other",
+    labels: { [LABELS.managed]: "true", [LABELS.install]: "otherinstall", [LABELS.role]: "agent" },
+    state: "running",
+    image: "x",
+  });
+
 describe("releaseSandbox", () => {
-  it("refuses while a launch is live and removes nothing", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const id = fake.addContainer({
-      name: "live",
-      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent" },
-      state: "running",
-      image: "x",
-    });
+  it("refuses while a launch is live and tears nothing down", async () => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
+    const { runs, teardown } = tracked();
 
     await holdLaunch(harness);
 
-    const notes: string[] = [];
-
-    await expect(releaseSandbox(harness.deps, (line) => notes.push(line))).rejects.toThrow(
+    await expect(releaseSandbox(harness.deps, () => undefined, teardown)).rejects.toThrow(
       "1 pi session is running in the sandbox VM",
     );
-    expect(fake.containers.has(id)).toBe(true);
+    expect(runs.count).toBe(0);
+    expect(harness.proxyStops()).toBe(0);
   });
 
-  it("removes the managed containers, networks, volumes and images by label, leaves another install's, and releases every folder", async () => {
+  it("releases every folder, stops the proxy and tears down, leaving the engine objects to the VM delete", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
-    const repo = sha256Hex(harness.repoRoot);
-    const context = await tempDir("uninstall-images");
-
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
-
-    const managed = fake.addContainer({
+    const { runs, teardown } = tracked();
+    const repo = "c".repeat(64);
+    const mountPoint = join(harness.root, "elsewhere", "node_modules");
+    const container = fake.addContainer({
       name: "pinata-a",
       labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: repo },
-      state: "running",
-      image: "x",
-    });
-    const foreign = fake.addContainer({ name: "foreign", labels: {}, state: "running", image: "x" });
-    const other = fake.backendFor("otherinstall");
-    const othersContainer = fake.addContainer({
-      name: "pinata-other",
-      labels: { [LABELS.managed]: "true", [LABELS.install]: "otherinstall", [LABELS.role]: "agent" },
       state: "stopped",
       image: "x",
     });
 
-    await other.prepareNetwork();
+    await mkdir(mountPoint, { recursive: true });
 
-    await other.ensureVolume("pinata-agent-other");
+    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).created, [mountPoint]);
 
-    await fake.backend.ensureVolume("pinata-agent-a", { [LABELS.repoHash]: repo });
-
-    const built = await fake.backend.buildImage(context, "pinata-layer:a");
-
-    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).record, { root: harness.repoRoot });
-
-    await releaseSandbox(harness.deps, () => undefined);
-    expect(fake.containers.has(managed)).toBe(false);
-    expect(fake.containers.has(foreign)).toBe(true);
-    expect(fake.containers.has(othersContainer)).toBe(true);
-    expect(fake.relays.size).toBe(0);
-    expect(fake.networks.has(FAKE_NETWORK)).toBe(false);
-    expect(fake.networks.has(networkName("otherinstall"))).toBe(true);
-    expect(fake.volumes.has("pinata-agent-a")).toBe(false);
-    expect(fake.volumes.has("pinata-agent-other")).toBe(true);
-    expect(fake.imageRemovals).toContain(built.id);
+    await releaseSandbox(harness.deps, () => undefined, teardown);
+    expect(await exists(mountPoint)).toBe(false);
     expect(harness.proxyStops()).toBe(1);
+    expect(runs.count).toBe(1);
+    expect(fake.containers.has(container)).toBe(true);
     expect(harness.stdout()).toBe("");
   });
 
-  it("keeps the sandbox, the ground and the stored objects when a pi session starts while the uninstall runs", async () => {
+  it("tears down when the VM is stopped", async () => {
+    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
+    const { runs, teardown } = tracked();
+
+    await releaseSandbox(harness.deps, () => undefined, teardown);
+    expect(runs.count).toBe(1);
+    expect(harness.proxyStops()).toBe(1);
+  });
+
+  it("keeps the sandbox when a pi session starts while it runs", async () => {
     const fake = createFakeBackend();
     const detections = { count: 0 };
     const harness = await createHarness({
@@ -86,97 +83,63 @@ describe("releaseSandbox", () => {
           detections.count += 1;
 
           if (detections.count === 2) {
-            await holdLaunch(harness);
+            otherSession(fake);
           }
 
           return { available: true };
         },
       }),
     });
+    const { runs, teardown } = tracked();
     const repo = sha256Hex(harness.repoRoot);
-
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
-
-    const starting = fake.addContainer({
-      name: "pinata-starting",
-      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: repo },
-      state: "running",
-      image: "x",
-    });
-
-    await fake.backend.ensureVolume("pinata-agent-a", { [LABELS.repoHash]: repo });
-
     const notes: string[] = [];
 
-    await expect(releaseSandbox(harness.deps, (line) => notes.push(line))).rejects.toThrow(
-      "the sandbox network, proxy, services, volumes and images were kept",
+    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).record, { root: harness.repoRoot });
+
+    const release = withFileLock(stateLayout(harness.stateDir).repo(repo).prepareLock, () =>
+      releaseSandbox(harness.deps, (line) => notes.push(line), teardown),
     );
-    expect(fake.containers.has(starting)).toBe(true);
-    expect(fake.relays.size).toBe(1);
-    expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
-    expect(fake.volumes.has("pinata-agent-a")).toBe(true);
+
+    await expect(release).rejects.toThrow(
+      "a pi session started in the sandbox VM meanwhile (1 pi session is running",
+    );
+    expect(runs.count).toBe(0);
     expect(harness.proxyStops()).toBe(0);
     expect(notes).toEqual([`A pi session of ${repo.slice(0, 12)} started meanwhile; its sandbox stays`]);
   });
 
-  it("holds a pi session that registers during the removal of the install objects until the removal ends", async () => {
-    const fake = createFakeBackend();
+  it("holds a pi session that registers during the teardown until the teardown ends", async () => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
     const order: string[] = [];
     const registering = { done: Promise.resolve() };
-    const harness = await createHarness({
-      backend: () => ({
-        ...fake.backend,
-        removeVolume: async (name) => {
-          registering.done = holdLaunch(harness).then(() => {
-            order.push("registered");
-          });
 
-          await new Promise((resolve) => setTimeout(resolve, 100));
+    const teardown = async () => {
+      registering.done = holdLaunch(harness).then(() => {
+        order.push("registered");
+      });
 
-          order.push("removed");
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-          return fake.backend.removeVolume(name);
-        },
-      }),
-    });
+      order.push("removed");
+    };
 
-    await fake.backend.ensureVolume("pinata-cache-a");
-
-    await releaseSandbox(harness.deps, () => undefined);
+    await releaseSandbox(harness.deps, () => undefined, teardown);
 
     await registering.done;
 
     expect(order).toEqual(["removed", "registered"]);
-    expect(fake.volumes.has("pinata-cache-a")).toBe(false);
   });
 
-  it("releases the host side and leaves the engine objects to the profile when the VM is stopped", async () => {
-    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
-    const repo = "c".repeat(64);
-    const mountPoint = join(harness.root, "elsewhere", "node_modules");
-
-    await mkdir(mountPoint, { recursive: true });
-
-    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).created, [mountPoint]);
-
-    await releaseSandbox(harness.deps, () => undefined);
-    expect(await exists(mountPoint)).toBe(false);
-    expect(harness.proxyStops()).toBe(1);
-    expect(harness.stdout()).toBe("");
-  });
-
-  it("stops the proxy when listing the engine's containers fails", async () => {
-    const fake = createFakeBackend();
+  it("does not tear down when stopping the proxy fails", async () => {
     const harness = await createHarness({
-      backend: () => ({
-        ...fake.backend,
-        findContainers: () => Promise.reject(new Error("engine broke")),
-      }),
+      backend: () => createFakeBackend().backend,
+      proxy: { stop: () => Promise.reject(new Error("proxy would not stop")) },
     });
+    const { runs, teardown } = tracked();
 
-    const notes: string[] = [];
-
-    await expect(releaseSandbox(harness.deps, (line) => notes.push(line))).rejects.toThrow("engine broke");
-    expect(harness.proxyStops()).toBe(1);
+    await expect(releaseSandbox(harness.deps, () => undefined, teardown)).rejects.toThrow(
+      "proxy would not stop",
+    );
+    expect(runs.count).toBe(0);
   });
 });

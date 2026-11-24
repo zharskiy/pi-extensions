@@ -1,13 +1,7 @@
 import { rm, rmdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { ENGINE_PROFILE } from "../../backend/index.ts";
-import {
-  errorMessage,
-  LauncherError,
-  lstatOrUndefined,
-  realOrResolved,
-  stateLayout,
-} from "../../shared/index.ts";
+import { LauncherError, lstatOrUndefined, realOrResolved, stateLayout } from "../../shared/index.ts";
 import { releaseSandbox } from "../commands/uninstall.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
 import { runQuietly, type Steps, stepsOf, tilde } from "../steps.ts";
@@ -15,41 +9,36 @@ import { hostPiQuietly, PACKAGE, piSources, refuseBusy } from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
 import { removePinataLink, removeShim } from "./shim.ts";
 
-const release = async (deps: CliDeps, steps: Steps) => {
-  if ((await lstatOrUndefined(pathsOf(deps).stateDir)) === undefined) {
-    return;
-  }
-
-  await releaseSandbox(deps, steps.note).catch((error: unknown) => {
-    throw error instanceof LauncherError && error.hint !== undefined
-      ? error
-      : new LauncherError(
-          errorMessage(error),
-          `colima delete --profile ${ENGINE_PROFILE} --force --data removes the VM with everything in it, then run pinata uninstall again`,
-        );
-  });
-};
-
 const SANDBOX = {
   pending: "Removing the sandbox VM and its data",
   failed: "Could not remove the sandbox VM",
 };
 
-const removeSandbox = async (deps: CliDeps, steps: Steps) => {
-  const present = (await deps.backend().vm.inspect()).state !== "absent";
+const deleteVm = async (deps: CliDeps) => {
   const env = { COLIMA_HOME: join(deps.home, ".colima") };
 
-  await steps.task(
-    { ...SANDBOX, done: present ? "Removed the sandbox VM and its data" : undefined },
-    async () => {
-      await release(deps, steps);
+  await runQuietly(deps, ["colima", "delete", "--profile", ENGINE_PROFILE, "--force", "--data"], { env });
+};
 
-      if (present) {
-        await runQuietly(deps, ["colima", "delete", "--profile", ENGINE_PROFILE, "--force", "--data"], {
-          env,
-        });
-      }
-    },
+export const removeSandbox = async (
+  deps: CliDeps,
+  steps: Steps,
+  forget: () => Promise<void> = async () => undefined,
+) => {
+  const present = (await deps.backend().vm.inspect()).state !== "absent";
+  const stateKept = (await lstatOrUndefined(pathsOf(deps).stateDir)) !== undefined;
+
+  const teardown = () => (present ? deleteVm(deps) : Promise.resolve());
+
+  const released = () =>
+    releaseSandbox(deps, steps.note, async () => {
+      await teardown();
+
+      await forget();
+    });
+
+  await steps.task({ ...SANDBOX, done: present ? "Removed the sandbox VM and its data" : undefined }, () =>
+    stateKept ? released() : teardown(),
   );
 };
 

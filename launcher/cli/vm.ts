@@ -3,13 +3,7 @@ import { join } from "node:path";
 import type { Backend, VmPath, VmShare, VmSpec, VmTarget } from "../backend/index.ts";
 import { defaultVmMemoryProblem, type SandboxConfig, VM_BOUNDS } from "../config/index.ts";
 import { isWithin, LauncherError, outermostPaths, realOrResolvedSync, stateLayout } from "../shared/index.ts";
-import {
-  type HostBind,
-  type HostSessions,
-  hostBinds,
-  requiredRoot,
-  sharedRootOf,
-} from "../workspace/index.ts";
+import { type HostBind, type HostSessions, requiredRoot, sharedRootOf } from "../workspace/index.ts";
 import { vmSessions } from "./busy.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeNotices } from "./deps.ts";
@@ -188,27 +182,6 @@ export const startVm = async (
 
   await backend.vm.ensureRunning((notice) => progress(`pinata: ${notice}`), start.plan.shares, start.size);
 };
-
-export const configuredVmStart = async (deps: CliDeps, config: SandboxConfig) => {
-  const size = vmTargetOf(config.vm);
-
-  assertVmFitsHost(deps, size);
-
-  assertMemoryFitsVm(deps, config);
-
-  const binds = hostBinds(config.mounts.binds, { home: deps.home, env: deps.env, roots: rootPaths(config) });
-  const plan = await prepareVmShares(deps, config.workspaceRoot, binds);
-
-  writeNotices(deps, plan.notices);
-
-  return { shares: plan.shares, size };
-};
-
-export const startConfiguredVm = (
-  backend: Backend,
-  start: { shares: VmShare[]; size: VmTarget },
-  progress: (line: string) => void,
-) => backend.vm.ensureRunning((notice) => progress(`pinata: ${notice}`), start.shares, start.size);
 
 const vmBusy = (context: LaunchContext, backend: Backend, launchId: string) => () =>
   vmSessions(backend, context.stateDir, launchId);

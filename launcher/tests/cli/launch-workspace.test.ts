@@ -142,7 +142,7 @@ describe("pi in a project of the workspace root", () => {
     expect(await runPinata(["status"], deps)).toBe(0);
     expect(harness.stdout()).toContain(`folder: ${harness.work}\n`);
     expect(await runPinata(["restart"], deps)).toBe(0);
-    expect(harness.stdout()).toContain("restarted the sandbox VM\n");
+    expect(harness.stdout()).toContain("ok Created the sandbox VM in");
   });
 
   it("refuses the home and a folder under a dotfiles home, and still runs status there", async () => {
