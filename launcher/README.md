@@ -286,7 +286,7 @@ Exit every pi session, then run `pinata uninstall`. It releases the sandbox, del
 
 Your repositories, `~/.pi` with its sessions, your config `~/.pi/agent/pinata/config.json` and pi stay; pinata never removes pi. It prints one line per part it removed, then what it kept on purpose.
 
-To run pi on the host again without removing pinata, run `pinata uninstall --sandbox`. It does the same, except that pinata's extensions stay in host pi, and the `PATH` block and the `pinata` command stay too. `pi` is then host pi, and `pinata install` brings the sandbox back. It says pi runs on the host again only when pi is installed there. When something else took `~/.local/bin/pi` meanwhile, it leaves that file, does not say pi runs on the host again, and names the `ln -s` that puts pi's managed link back. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it. `pinata list` shows this sandbox VM; `colima list` shows every Colima VM on the Mac.
+To run pi on the host again without removing pinata, run `pinata uninstall --sandbox`. It does the same, except that pinata's extensions stay in host pi, and the `PATH` block and the `pinata` command stay too. `pi` is then host pi, when pi is installed on the host, and `pinata install` brings the sandbox back; it closes with `The sandbox is uninstalled.` and that `pinata install` brings it back. When something else took `~/.local/bin/pi` meanwhile, it leaves that file and names the `ln -s` that puts pi's managed link back. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it. `pinata list` shows this sandbox VM; `colima list` shows every Colima VM on the Mac.
 
 ## More
 

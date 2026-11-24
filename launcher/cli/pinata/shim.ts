@@ -88,7 +88,7 @@ export const removeShim = async (deps: CliDeps, steps: Steps) => {
       steps.done(`Removed pinata's pi link (${tilde(deps, path)})`);
     }
 
-    return true;
+    return;
   }
 
   if ((await lstatOrUndefined(path)) !== undefined) {
@@ -96,14 +96,12 @@ export const removeShim = async (deps: CliDeps, steps: Steps) => {
       `Could not put pi's own link back, since ${tilde(deps, path)} is taken; once it is free, run ln -s '${recorded}' '${path}'`,
     );
 
-    return false;
+    return;
   }
 
   await symlink(recorded, path);
 
   steps.done(`Restored pi's own link (${tilde(deps, path)})`);
-
-  return true;
 };
 
 export const inspectPinataLink = async (deps: CliDeps) => {

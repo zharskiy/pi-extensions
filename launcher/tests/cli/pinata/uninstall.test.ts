@@ -69,9 +69,7 @@ describe("pinata uninstall", () => {
         "ok Removed pinata's pi link (~/.local/bin/pi)",
         "ok Removed pinata's state",
         "",
-        "The sandbox is uninstalled and pi runs on the host again. Kept on purpose:",
-        "  Extensions:  pinata's extensions stay loaded in pi",
-        `  Settings:    ${pinata.harness.userConfigFile}`,
+        "The sandbox is uninstalled.",
         "  Bring back:  pinata install",
         "",
       ].join("\n"),
@@ -136,7 +134,7 @@ describe("pinata uninstall", () => {
     expect(await pinata.packages()).toEqual([pinata.packageDir, "npm:other"]);
   });
 
-  it("does not say pi runs on the host again when the host has no pi", async () => {
+  it("closes --sandbox the same way when the host has no pi", async () => {
     const pinata = await installed(false, false);
 
     expect(await pinata.run("uninstall", "--sandbox")).toBe(0);
@@ -146,16 +144,14 @@ describe("pinata uninstall", () => {
         "ok Removed pinata's pi link (~/.local/bin/pi)",
         "ok Removed pinata's state",
         "",
-        "The sandbox is uninstalled. Kept on purpose:",
-        "  Extensions:  pinata's extensions stay loaded in pi",
-        `  Settings:    ${pinata.harness.userConfigFile}`,
+        "The sandbox is uninstalled.",
         "  Bring back:  pinata install",
         "",
       ].join("\n"),
     );
   });
 
-  it("does not say pi runs on the host again when it cannot put pi's own link back", async () => {
+  it("warns and closes the same way when it cannot put pi's own link back", async () => {
     const pinata = await createPinata({ vm: { inspect: async () => RUNNING } });
     const managed = join(pinata.harness.hostAgentDir, "bin", "pi");
 
@@ -180,9 +176,7 @@ describe("pinata uninstall", () => {
         `! Could not put pi's own link back, since ~/.local/bin/pi is taken; once it is free, run ln -s '${managed}' '${pinata.shim}'`,
         "ok Removed pinata's state",
         "",
-        "The sandbox is uninstalled. Kept on purpose:",
-        "  Extensions:  pinata's extensions stay loaded in pi",
-        `  Settings:    ${pinata.harness.userConfigFile}`,
+        "The sandbox is uninstalled.",
         "  Bring back:  pinata install",
         "",
       ].join("\n"),

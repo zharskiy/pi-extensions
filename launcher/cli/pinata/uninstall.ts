@@ -80,18 +80,6 @@ const COMMAND = {
   failed: "Could not remove the pinata command",
 };
 
-const closeSandboxOnly = (deps: CliDeps, steps: Steps, hostPi: boolean) =>
-  steps.close(
-    hostPi
-      ? "The sandbox is uninstalled and pi runs on the host again. Kept on purpose:"
-      : "The sandbox is uninstalled. Kept on purpose:",
-    [
-      ["Extensions", "pinata's extensions stay loaded in pi"],
-      ["Settings", tilde(deps, pathsOf(deps).userConfigFile)],
-      ["Bring back", "pinata install"],
-    ],
-  );
-
 const removeState = async (deps: CliDeps, steps: Steps) => {
   const { stateDir, userConfigFile } = pathsOf(deps);
   const info = await lstatOrUndefined(stateDir);
@@ -129,12 +117,12 @@ export const uninstall = async (deps: CliDeps, packageDir: string, sandboxOnly: 
 
   await removeSandbox(deps, steps);
 
-  const restored = await removeShim(deps, steps);
+  await removeShim(deps, steps);
 
   if (sandboxOnly) {
     await removeState(deps, steps);
 
-    closeSandboxOnly(deps, steps, restored && (await resolveJobPi(deps)) !== undefined);
+    steps.close("The sandbox is uninstalled.", [["Bring back", "pinata install"]]);
 
     return 0;
   }
