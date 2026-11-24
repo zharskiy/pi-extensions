@@ -1,10 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { VmInspect } from "../../../backend/index.ts";
-import { launcherVersion } from "../../../cli/versions.ts";
 import { createPinata } from "./support.ts";
-
-const RUNNING: VmInspect = { state: "running", size: { cpus: 4, memoryGiB: 8, diskGiB: 60 }, shares: [] };
 
 describe("pinata update", () => {
   it("installs the package with npm, then passes on the exit code of the new pinata install", async () => {
@@ -25,9 +21,9 @@ describe("pinata update", () => {
         .map((call) => ({ interactive: call.interactive, env: call.options.env })),
     ).toEqual([
       { interactive: false, env: undefined },
-      { interactive: true, env: { PINATA_UPDATED_FROM: await launcherVersion() } },
+      { interactive: true, env: undefined },
     ]);
-    expect(pinata.harness.stdout()).toBe("");
+    expect(pinata.harness.stdout()).toBe("ok Updated pinata\n");
   });
 
   it("shows npm's output when it fails and does not run the new install", async () => {
@@ -49,26 +45,6 @@ describe("pinata update", () => {
       ].join("\n"),
     );
     expect(pinata.harness.calls.filter((call) => call.file === process.execPath)).toEqual([]);
-  });
-
-  it("names the update and the new version when the new install runs", async () => {
-    const pinata = await createPinata({ global: true, vm: { inspect: async () => RUNNING } });
-    const version = await launcherVersion();
-
-    pinata.harness.deps.env.PINATA_UPDATED_FROM = "0.0.1";
-
-    expect(await pinata.run("install", "--yes")).toBe(0);
-    expect(pinata.harness.stdout()).toBe(
-      [
-        `ok Updated pinata 0.0.1 -> ${version}`,
-        "ok Registered pinata's extensions with pi",
-        "ok Linked pi to the sandbox (~/.local/bin/pi)",
-        "ok Added ~/.local/bin to PATH in ~/.zshrc",
-        "",
-        `Pinata is up to date (${version}).`,
-        "",
-      ].join("\n"),
-    );
   });
 
   it("refuses in a checkout", async () => {

@@ -47,7 +47,7 @@ Each step that changes something prints one line, such as `✔ Installed colima`
 
 Run again, `pinata install` changes nothing and prints `Pinata is already installed. Nothing changed.` Open a new terminal afterwards.
 
-To pick other versions, run `pinata update [<version>]`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@<version>` (`latest` without a version), then the new copy's `pinata install --yes`, which prints `✔ Updated pinata <old> → <new>`, its own steps and `Pinata is up to date (<new>).` A bare `pi update` moves an npm pi to the latest version. Pi in the sandbox follows the host pi.
+To pick other versions, run `pinata update [<version>]`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@<version>` (`latest` without a version), then the new copy's `pinata install --yes`. A bare `pi update` moves an npm pi to the latest version. Pi in the sandbox follows the host pi.
 
 To change the folder or the VM size later, run `pinata init` again. It plans the same VM shares as a launch, the folders of `mounts.binds` included.
 

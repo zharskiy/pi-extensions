@@ -75,13 +75,7 @@ const linkPinata = (deps: CliDeps, steps: Steps, packageDir: string, checkout: b
     ? installPinataLink(deps, steps, join(packageDir, "launcher", "bin", "pinata-dev.js"))
     : removePinataLink(deps, steps);
 
-export const UPDATED_FROM = "PINATA_UPDATED_FROM";
-
-const close = async (deps: CliDeps, steps: Steps, asked: boolean) => {
-  if (deps.env[UPDATED_FROM] !== undefined) {
-    return steps.close(`Pinata is up to date (${await launcherVersion()}).`);
-  }
-
+const close = (deps: CliDeps, steps: Steps, asked: boolean) => {
   if (!steps.changed() && !asked) {
     return steps.close("Pinata is already installed. Nothing changed.");
   }
@@ -93,23 +87,12 @@ const close = async (deps: CliDeps, steps: Steps, asked: boolean) => {
   ]);
 };
 
-const announceUpdate = async (deps: CliDeps, steps: Steps) => {
-  const from = deps.env[UPDATED_FROM];
-  const version = await launcherVersion();
-
-  if (from !== undefined && from !== version) {
-    steps.done(`Updated pinata ${from} → ${version}`);
-  }
-};
-
 export const install = async (deps: CliDeps, packageDir: string, flags: InstallFlags) => {
   await requireJobPi(deps, "install");
 
   const config = flags.config === undefined ? undefined : await readConfig(deps, flags.config);
   const checkout = await isCheckout(deps, packageDir);
   const steps = stepsOf(deps);
-
-  await announceUpdate(deps, steps);
 
   await preflight(deps, steps);
 
@@ -140,7 +123,7 @@ export const install = async (deps: CliDeps, packageDir: string, flags: InstallF
   const { code, asked } = await setup(deps, steps, flags);
 
   if (code === 0) {
-    await close(deps, steps, asked);
+    close(deps, steps, asked);
   }
 
   return code;

@@ -3,9 +3,7 @@ import { LauncherError } from "../../shared/index.ts";
 import type { CliDeps } from "../deps.ts";
 import { requireJobPi } from "../host-pi.ts";
 import { runQuietly, stepsOf } from "../steps.ts";
-import { launcherVersion } from "../versions.ts";
 import { isCheckout, PACKAGE, preflight, refuseBusy } from "./host.ts";
-import { UPDATED_FROM } from "./install.ts";
 
 export const update = async (deps: CliDeps, packageDir: string, version?: string) => {
   if (await isCheckout(deps, packageDir)) {
@@ -20,19 +18,16 @@ export const update = async (deps: CliDeps, packageDir: string, version?: string
 
   await refuseBusy(deps);
 
-  const from = await launcherVersion();
   const spec = `${PACKAGE}@${version ?? "latest"}`;
 
-  await steps.task({ pending: "Updating pinata", failed: "Could not update pinata" }, () =>
-    runQuietly(deps, ["npm", "install", "-g", "--legacy-peer-deps", spec]),
+  await steps.task(
+    { pending: "Updating pinata", done: "Updated pinata", failed: "Could not update pinata" },
+    () => runQuietly(deps, ["npm", "install", "-g", "--legacy-peer-deps", spec]),
   );
 
   return deps.runner.spawnInteractive(
     process.execPath,
     [join(packageDir, "launcher", "bin", "pinata.js"), "install", "--yes"],
-    {
-      cwd: deps.cwd,
-      env: { [UPDATED_FROM]: from },
-    },
+    { cwd: deps.cwd },
   );
 };
