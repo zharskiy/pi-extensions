@@ -92,11 +92,14 @@ const capRule = ({ childCap }: RunAgentLimits) =>
   childCap === undefined
     ? []
     : [
-        `- Cap: you may start at most ${childCap} agents in this run, across all your batches; further calls are refused. Do not start an agent for work of a few tool calls.`,
-        "- Delegating: give searching, command runs and web pages to the agents above whose descriptions fit, and ask for path:line citations with the quoted line, not conclusions.",
+        `- Cap: you may start at most ${childCap} agents in this run, across all your batches; further calls are refused. Never hand your whole task to another agent: if you cannot finish it, return \`Status: partial\` with what is left under Open.`,
       ];
 
-export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgentLimits): string =>
+export const describeRunAgent = (
+  allowedAgents: DelegateAgent[],
+  limits: RunAgentLimits,
+  guide: string,
+): string =>
   [
     "Start one or more background agents as one batch. Each agent gets its own context window, works alone with no access to this conversation, and returns one result. The call returns at once with agent ids and you are woken once, with every result of the batch, when all of its agents are done; after starting a batch, end your turn.",
     "Agents you may start:",
@@ -110,14 +113,14 @@ export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgen
       ...capRule(limits),
       `- Concurrency: at most ${limits.maxConcurrent} agents run at the same time across the whole tree; extra agents wait in a queue.`,
       "- Context limit: an agent that reaches its context limit writes a handoff file. When the handoff says the work is partial, the harness starts a successor from it in the same batch on its own; you are not woken and the chain counts as one agent. Only when the chain cap is reached or the handoff says blocked does the agent end as handoff.",
-      "- Batches: put independent tasks in one call so they run in parallel. Run a dependent task in a later call, after the results it depends on have arrived.",
     ].join("\n"),
+    guide,
     [
       "Result contract: one message per batch with one section per agent, headed `## <id> (<agent>) - <state>`.",
-      "- done: the result follows inline; when it is large only its head is inline and a last line `Result file: <path> (<N> more chars)` points to the full text. A `(shape: no Status line)` note means it does not follow the shape below. It starts with `Status: done`, `Status: partial` (its Open line says what is left) or `Status: blocked` (it changed nothing; either the task was ambiguous and it lists the questions, or a `Wrong agent:` line says the task belongs to another agent: start that one with the same task), and ends with `Verification:` and `Open:` lines.",
-      "- failed: the reason, plus the agent's last output under an `(unverified partial output: <reason>)` note when it had any; it is not a result.",
+      "- done: the result follows inline; when it is large only its head is inline and a last line `Result file: <path> (<N> more chars)` points to the full text. A `(shape: no Status line)` note means it does not follow the shape below. It starts with `Status: done`, `Status: partial` (its Open line says what is left) or `Status: blocked` (it changed nothing; either the task was ambiguous and it lists the questions, or a `Wrong agent:` line says the task belongs to another agent), and ends with `Verification:` and `Open:` lines.",
+      "- failed: the reason, plus the agent's last output under an `(unverified partial output: <reason>)` note when it had any.",
       "- stopped: the reason, plus the agent's last output under an `(unverified partial output: <reason>)` note when it had any.",
-      "- handoff: `Handoff file: <path>`; the agent ran out of context before finishing and could not be continued automatically (blocked, the chain cap was reached, or the file does not follow the handoff schema, shown as `(invalid: <reasons>)` after the path). To continue, start a new agent and pass the handoff file in `files`.",
+      "- handoff: `Handoff file: <path>`; the agent ran out of context before finishing and could not be continued automatically (blocked, the chain cap was reached, or the file does not follow the handoff schema, shown as `(invalid: <reasons>)` after the path).",
       "- A `Chain: <id> → <id> (N sessions)` line means the agent continued itself from handoffs; the section carries the last session's id and the totals of all sessions. Any id of the chain works with `message_agent` and `agent_status`.",
     ].join("\n"),
   ].join("\n\n");
@@ -128,8 +131,7 @@ const runAgentParameters = {
     agents: {
       type: "array",
       minItems: 1,
-      description:
-        "Agents to start as one batch. They run in parallel; you are woken once when all are done.",
+      description: "Agents to start as one batch.",
       items: {
         type: "object",
         properties: {
@@ -137,7 +139,7 @@ const runAgentParameters = {
           task: {
             type: "string",
             description:
-              "Self-contained brief with one line each: Goal, User's words, Known, Where to look, Scope, Done when, Return.",
+              "Self-contained brief, one line each as under Brief above: Goal, User's words, Known, Where to look, Scope, Done when, Return.",
           },
           description: {
             type: "string",

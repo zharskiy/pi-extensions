@@ -104,6 +104,8 @@ export const runAgentPlugin: Plugin = {
       }
     });
 
+    const guide = readPrompt(paths.root, "delegating.md");
+
     const childTools = (record: AgentRecord): AnyToolSpec[] => {
       const own = definitions.get(record.agent);
       const allowed = grantedSubagents(definitions, record.agent)
@@ -128,12 +130,16 @@ export const runAgentPlugin: Plugin = {
         return extra;
       }
 
-      const description = describeRunAgent(allowed, {
-        callerDepth: record.depth,
-        maxDepth: settings.maxDepth,
-        maxConcurrent: settings.maxConcurrent,
-        childCap: settings.maxChildrenPerAgent,
-      });
+      const description = describeRunAgent(
+        allowed,
+        {
+          callerDepth: record.depth,
+          maxDepth: settings.maxDepth,
+          maxConcurrent: settings.maxConcurrent,
+          childCap: settings.maxChildrenPerAgent,
+        },
+        guide,
+      );
 
       const childDeps = { runner, registry, rows: pendingRows({ registry, hints }) };
 
@@ -219,11 +225,15 @@ export const runAgentPlugin: Plugin = {
     let registeredDescription: string | undefined;
 
     const registerRunAgent = () => {
-      const description = describeRunAgent(definitions.list(), {
-        callerDepth: 1,
-        maxDepth: settings.maxDepth,
-        maxConcurrent: settings.maxConcurrent,
-      });
+      const description = describeRunAgent(
+        definitions.list(),
+        {
+          callerDepth: 1,
+          maxDepth: settings.maxDepth,
+          maxConcurrent: settings.maxConcurrent,
+        },
+        guide,
+      );
 
       if (description === registeredDescription) {
         return;

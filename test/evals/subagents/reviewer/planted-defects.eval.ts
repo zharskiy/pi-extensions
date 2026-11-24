@@ -71,7 +71,6 @@ const reviewOnce = async (entry: ReviewerCase, index: number): Promise<Outcome> 
     agents: {
       reviewer: { from: "reviewer", fields: { limit: "150000" } },
       scout: { from: "scout" },
-      shell: { from: "shell" },
     },
   });
 

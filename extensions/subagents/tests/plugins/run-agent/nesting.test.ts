@@ -76,8 +76,9 @@ describe("nested agents", () => {
     const description = childTool(child, "run_agent").description;
 
     expect(description).toContain("- scout:");
-    expect(description).toContain("- reviewer:");
-    expect(description).toContain("- implementer:");
+    expect(description).toContain("- shell:");
+    expect(description).not.toContain("- implementer:");
+    expect(description).toContain("How to delegate:");
     expect(description).toContain("you run at depth 2; agents you start run at depth 3 of at most 3");
 
     await runMain([{ agent: "scout", task: "look" }]);
@@ -98,14 +99,14 @@ describe("nested agents", () => {
 
     const started = await spawnFrom(child, [
       { agent: "scout", task: "find a" },
-      { agent: "reviewer", task: "check b" },
+      { agent: "shell", task: "check b" },
     ]);
 
     expect(started.text).toContain("Started batch");
 
-    const [, scout, reviewer] = registry.list();
+    const [, scout, shell] = registry.list();
 
-    expect([scout.callerId, scout.depth, reviewer.callerId]).toEqual([record.id, 3, record.id]);
+    expect([scout.callerId, scout.depth, shell.callerId]).toEqual([record.id, 3, record.id]);
     expect(runtime.child(scout.id).task).toContain(`Task from ${record.id} (agent id ${scout.id})`);
 
     child.finish(`Started batch, waiting.`);
@@ -118,7 +119,7 @@ describe("nested agents", () => {
 
     expect(child.hidden).toEqual([]);
 
-    runtime.child(reviewer.id).finish("b looks fine");
+    runtime.child(shell.id).finish("b looks fine");
     await flushMicrotasks();
 
     expect(child.hidden).toHaveLength(1);

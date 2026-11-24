@@ -464,6 +464,12 @@ describe("run_agent batches", () => {
     ]);
   });
 
+  it("puts the delegation guide in the main session's description", () => {
+    const { host } = setup();
+
+    expect(host.tool<RunAgentParams, RunAgentDetails>("run_agent").description).toContain("How to delegate:");
+  });
+
   it("declares skills as a string list on each item of the schema", () => {
     const { host } = setup();
     const parameters = host.tool<RunAgentParams, RunAgentDetails>("run_agent").parameters as {
