@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -193,6 +194,25 @@ describe("pinata uninstall", () => {
     expect(pinata.lines().filter((line) => line.includes("pi-coding-agent"))).toEqual([]);
     expect(await readdir(managed, { recursive: true })).toEqual(before);
     expect(await exists(join(pinata.harness.hostAgentDir, "bin", "pi"))).toBe(true);
+  });
+
+  it("deletes the VM while it holds the VM lock", async () => {
+    const held: boolean[] = [];
+    const pinata = await createPinata({
+      vm: { inspect: async () => RUNNING },
+      answer: (call) => {
+        if (call.args[0] === "delete") {
+          held.push(existsSync(stateLayout(pinata.harness.stateDir).vmLock));
+        }
+
+        return undefined;
+      },
+    });
+
+    await writeFile(stateLayout(pinata.harness.stateDir).salt, "salt");
+
+    expect(await pinata.run("uninstall", "--sandbox")).toBe(0);
+    expect(held).toEqual([true]);
   });
 
   it("keeps the VM when releasing the sandbox fails", async () => {

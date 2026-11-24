@@ -1,7 +1,13 @@
 import { rm, rmdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { ENGINE_PROFILE } from "../../backend/index.ts";
-import { LauncherError, lstatOrUndefined, realOrResolved, stateLayout } from "../../shared/index.ts";
+import {
+  LauncherError,
+  lstatOrUndefined,
+  realOrResolved,
+  stateLayout,
+  withDirectoryLock,
+} from "../../shared/index.ts";
 import { releaseSandbox } from "../commands/uninstall.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
 import { resolveJobPi } from "../host-pi.ts";
@@ -14,6 +20,8 @@ const SANDBOX = {
   pending: "Removing the sandbox VM and its data",
   failed: "Could not remove the sandbox VM",
 };
+
+const VM_LOCK_TIMEOUT_MS = 180_000;
 
 const deleteVm = async (deps: CliDeps) => {
   const env = { COLIMA_HOME: join(deps.home, ".colima") };
@@ -33,7 +41,9 @@ export const removeSandbox = async (
 
   const released = () =>
     releaseSandbox(deps, steps.note, async () => {
-      await teardown();
+      await withDirectoryLock(stateLayout(pathsOf(deps).stateDir).vmLock, teardown, {
+        timeoutMs: VM_LOCK_TIMEOUT_MS,
+      });
 
       await forget();
     });
