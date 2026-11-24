@@ -222,7 +222,7 @@ describe("pinata install", () => {
       [
         "usage: pinata install [--config <file>] [--yes]",
         "usage: pinata update [<version>]",
-        "usage: pinata uninstall",
+        "usage: pinata uninstall [--sandbox]",
         "",
       ].join("\n"),
     );

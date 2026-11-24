@@ -101,7 +101,7 @@ The package also ships pinata, a host-side command that runs pi in a per-reposit
 npm install -g --legacy-peer-deps @zharskiy/pinata@<version>   # macOS with pi, Homebrew and Node 22.19 or newer
 pinata install [--config <file>] [--yes]
 pinata update [<version>]
-pinata uninstall
+pinata uninstall [--sandbox]
 pinata list                                                    # the sandbox VM and the pi sessions in it
 ```
 
@@ -111,7 +111,7 @@ pinata list                                                    # the sandbox VM 
 
 **One config for a team.** `--config <file>` checks the file before anything changes, then writes it over `~/.pi/agent/pinata/config.json`, with no merge, on every install that passes it.
 
-**Uninstall.** `pinata uninstall`, with no pi session running in the sandbox, deletes the sandbox VM with its containers, volumes and images, the `pi` link, the package's source in pi, the `PATH` blocks, pinata's state and the npm package. Your config, pi's sessions, pi and Colima stay.
+**Uninstall.** `pinata uninstall`, with no pi session running in the sandbox, deletes the sandbox VM with its containers, volumes and images, the `pi` link, the package's source in pi, the `PATH` blocks, pinata's state and the npm package. Your config, pi's sessions, pi and Colima stay. `pinata uninstall --sandbox` removes only the VM, the `pi` link and pinata's state, so `pi` runs host pi with pinata's extensions; `pinata install` brings the sandbox back.
 
 **Coming from the shell installer.** An install made with `launcher/install.sh` owns the `pinata` bin through the npm package `pi-extensions-mz`: run `npm uninstall -g pi-extensions-mz` before you install `@zharskiy/pinata`. A `pi install git:github.com/zharskiy/pi-extensions` source loads next to the new one and their tools clash: remove it with `pi remove <source>`.
 

@@ -26,6 +26,8 @@ interface Command {
 
 const HELP_FLAGS = ["-h", "--help"];
 
+const SANDBOX_FLAG = "--sandbox";
+
 const INSTALL_OPTIONS = { config: { type: "string" }, yes: { type: "boolean" } } as const;
 
 const parseOptions = <T extends Record<string, { type: "string" | "boolean" }>>(
@@ -73,7 +75,10 @@ const help: Command = { run: helpCommand };
 const COMMANDS: Record<string, Command> = {
   install: { run: installCommand, options: "parsed" },
   update: { run: updateCommand, options: "parsed" },
-  uninstall: { run: (deps, _args, packageDir) => uninstall(deps, packageDir), options: [] },
+  uninstall: {
+    run: (deps, args, packageDir) => uninstall(deps, packageDir, args.includes(SANDBOX_FLAG)),
+    options: [SANDBOX_FLAG],
+  },
   init: { run: initCommand, options: [YES_FLAG] },
   status: { run: statusCommand, options: [] },
   list: { run: listCommand, options: [] },

@@ -89,7 +89,7 @@ const removeState = async (deps: CliDeps) => {
   say(deps, `state: removed ${stateDir}`);
 };
 
-export const uninstall = async (deps: CliDeps, packageDir: string) => {
+export const uninstall = async (deps: CliDeps, packageDir: string, sandboxOnly: boolean) => {
   await refuseBusy(deps);
 
   await release(deps);
@@ -98,13 +98,24 @@ export const uninstall = async (deps: CliDeps, packageDir: string) => {
 
   await removeShim(deps);
 
-  await removePinataLink(deps);
+  if (!sandboxOnly) {
+    await removePinataLink(deps);
 
-  await removeExtensions(deps, packageDir);
+    await removeExtensions(deps, packageDir);
 
-  await setPathBlock(deps, false);
+    await setPathBlock(deps, false);
+  }
 
   await removeState(deps);
+
+  if (sandboxOnly) {
+    writeLines(deps.stdout, [
+      `kept: pinata's extensions in host pi, the pinata command, the PATH block, ${pathsOf(deps).userConfigFile}, pi's sessions, pi and colima`,
+      "pi runs host pi again; pinata install brings the sandbox back",
+    ]);
+
+    return 0;
+  }
 
   writeLines(deps.stdout, [
     `kept: ${pathsOf(deps).userConfigFile}, pi's sessions in ${join(hostAgentDirOf(deps), "sessions")}, pi and colima`,

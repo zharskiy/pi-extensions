@@ -1,4 +1,4 @@
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, readlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmInspect } from "../../../backend/index.ts";
@@ -36,6 +36,49 @@ describe("pinata uninstall", () => {
     expect(await pinata.packages()).toEqual(["npm:other"]);
     expect(await exists(pinata.harness.stateDir)).toBe(false);
     expect(pinata.lines().at(-1) === "npm uninstall -g @zharskiy/pinata").toBe(global);
+  });
+
+  it("removes only the sandbox with --sandbox, and install brings it back as a plain rerun", async () => {
+    const pinata = await createPinata({ vm: { inspect: async () => RUNNING } });
+    const zshrc = join(pinata.home, ".zshrc");
+    const link = join(pinata.home, ".local", "bin", "pinata");
+    const read = () =>
+      Promise.all([readFile(zshrc, "utf8"), readlink(link), readFile(pinata.harness.userConfigFile, "utf8")]);
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+
+    await writeFile(stateLayout(pinata.harness.stateDir).salt, "salt");
+
+    const installed = {
+      packages: await pinata.packages(),
+      shim: await readlink(pinata.shim),
+      files: await read(),
+    };
+    const calls = pinata.lines().length;
+
+    expect(await pinata.run("uninstall", "--sandbox")).toBe(0);
+    expect(pinata.lines().slice(calls)).toEqual(["colima delete --profile pinata --force --data"]);
+    expect(await exists(pinata.shim)).toBe(false);
+    expect(await exists(pinata.harness.stateDir)).toBe(false);
+    expect(await pinata.packages()).toEqual(installed.packages);
+    expect(await read()).toEqual(installed.files);
+    expect(pinata.harness.stdout().trimEnd().split("\n").slice(-2)).toEqual([
+      `kept: pinata's extensions in host pi, the pinata command, the PATH block, ${pinata.harness.userConfigFile}, pi's sessions, pi and colima`,
+      "pi runs host pi again; pinata install brings the sandbox back",
+    ]);
+
+    const rerun = pinata.lines().length;
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(
+      pinata
+        .lines()
+        .slice(rerun)
+        .filter((line) => / (install|remove) /.test(line)),
+    ).toEqual([]);
+    expect(await readlink(pinata.shim)).toBe(installed.shim);
+    expect(await pinata.packages()).toEqual(installed.packages);
+    expect(await read()).toEqual(installed.files);
   });
 
   it("leaves pi alone", async () => {
