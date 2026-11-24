@@ -7,7 +7,7 @@ import type { DenialRecord } from "../../proxy/index.ts";
 import { repoHash, sha256Hex, writeRepoRecord } from "../../shared/index.ts";
 import { expectNoLeak } from "../support/expect-no-leak.ts";
 import { tempDir, writeExecutable, writeText } from "../support/temp-dir.ts";
-import { createFakeBackend, createHarness, isPiSession, noHostPiLine, renderDirOf } from "./harness.ts";
+import { createFakeBackend, createHarness, isPiSession, renderDirOf } from "./harness.ts";
 
 const REAL_KEY = "real-secret-value-1234567890";
 
@@ -349,7 +349,7 @@ describe("pi launch wiring", () => {
 
   it("prints derivation notices on stderr, one line each", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend, hostPi: false });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
       mcpServers: { docs: { url: "https://docs.example.test/mcp" } },
@@ -358,7 +358,6 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain("pinata: mcp docs: not signed in; run pi mcp login docs\n");
-    expect(harness.stderr()).toContain(`pinata: ${noHostPiLine(harness.hostAgentDir)}\n`);
   });
 
   it("names a pi argument that lies outside the folders mounted, once", async () => {

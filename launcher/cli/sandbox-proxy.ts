@@ -38,7 +38,7 @@ const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): Inpu
     parentEnv: parentProxyEnv(deps.env),
     ...(parentAuth === undefined ? {} : { parentAuth }),
     extraCa: tls.extraCa.length > 0,
-    piCommand: host.pi?.command ?? [],
+    piCommand: host.pi.command,
     hostAgentDir: host.hostAgentDir,
     accessLogLimit: PROXY_LOG_LIMIT,
   };

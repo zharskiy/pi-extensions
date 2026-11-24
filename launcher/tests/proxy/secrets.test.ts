@@ -242,12 +242,6 @@ describe("piAuth secrets", () => {
       reason: "piAuth secret for auth:a:key: /usr/bin/node timed out after 30 s",
     });
   });
-
-  it("is unavailable without a pi command", async () => {
-    const { resolver } = setup(undefined, { piCommand: [] });
-
-    expect(await resolver.resolve("rule", { piAuth: "a" })).toMatchObject({ ok: false });
-  });
 });
 
 describe("env and file secrets", () => {

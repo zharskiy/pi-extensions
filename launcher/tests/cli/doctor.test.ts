@@ -1414,42 +1414,29 @@ describe("pinata doctor on the host pi", () => {
     });
   });
 
-  it("fails without a managed pi, even with a pi on PATH, with the parts of the missing-pi line", async () => {
+  it("fails without a managed pi, even with a pi on PATH, with the error a launch gives", async () => {
     const { harness, found } = await hostPiCheck(async (harness) => {
       harness.deps.env.PATH = (await writePathPi(join(harness.root, "brew"), "1.7.0")).bin;
     }, false);
-    const [ignored, effect] = found?.reasons ?? [];
-    const joined = `${found?.detail} (${ignored}): ${effect}; ${found?.hint}`;
+    const joined = `${found?.detail}\n  hint: ${found?.hint}`;
 
-    expect(found).toMatchObject({
-      status: "fail",
-      detail: "no managed pi in ~/.pi/agent and no pi in npm's global packages",
-    });
-    expect(found?.reasons).toHaveLength(2);
+    expect(found).toMatchObject({ status: "fail" });
+    expect(found?.reasons).toEqual(["a pi found only on PATH or in a project's node_modules is not used"]);
     expect(joined.replace("~/", `${harness.deps.home}/`)).toBe(noHostPiLine(harness.hostAgentDir));
     expect(check(harness.stdout(), "provider hosts")).toMatchObject({ status: "skip", detail: "no host pi" });
   });
 
-  it("says the missing pi once, in its check, not again in the notices of a run that prepares the sandbox", async () => {
-    const { stdout, report } = await (async () => {
-      const port = await healthServer(200);
-      const fake = await guestBackend({});
-      const harness = await createHarness({
-        backend: () => fake.backend,
-        hostPi: false,
-        proxy: {
-          ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
-        },
-      });
+  it("does not start the sandbox without a host pi", async () => {
+    const fake = await guestBackend({});
+    const harness = await createHarness({ backend: () => fake.backend, hostPi: false });
 
-      await runPinata(["doctor", "--verbose"], harness.deps);
+    await runPinata(["doctor", "--verbose"], harness.deps);
 
-      return { stdout: harness.stdout(), report: doctorReport(harness.stdout()) };
-    })();
-
-    expect(check(stdout, "host side")?.status).toBe("ok");
-    expect(stdout.split("no managed pi in")).toHaveLength(2);
-    expect(report.notices.filter((notice) => notice.includes("no managed pi"))).toEqual([]);
+    expect(check(harness.stdout(), "sandbox")).toMatchObject({
+      status: "skip",
+      detail: "not started: there is no host pi",
+    });
+    expect(check(harness.stdout(), "host side")).toBeUndefined();
   });
 });
 

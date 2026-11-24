@@ -11,7 +11,7 @@ import {
   startLaunchContainer,
 } from "../container/index.ts";
 import type { Launch } from "../grants/index.ts";
-import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
+import { type HostPi, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
 import {
   installPackages,
@@ -30,7 +30,7 @@ import { checkHostRoot, type LaunchContext, openContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
 import { type HostSide, type PreparedHost, prepareHostSide } from "./derive.ts";
 import { startServices, withGroundLock } from "./ground.ts";
-import { NO_SANDBOX, resolveJobPi, runHostPi } from "./host-pi.ts";
+import { NO_SANDBOX, requireJobPi, runHostPi } from "./host-pi.ts";
 import {
   hostSessionsOf,
   noticeHostSessions,
@@ -151,9 +151,6 @@ const handled = <T>(pending: Promise<T>) => {
 
   return pending;
 };
-
-const startHostSide = (deps: CliDeps, context: LaunchContext, files: HostPiFiles) =>
-  handled(resolveJobPi(deps).then((pi) => prepareHostSide(deps, context, files, pi)));
 
 const prepareHost = async (
   deps: CliDeps,
@@ -595,6 +592,7 @@ export const withSandbox = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
+  pi: HostPi,
   use: (sandbox: Sandbox) => Promise<number>,
   {
     report = () => undefined,
@@ -633,7 +631,7 @@ export const withSandbox = async (
     ended.signal = signal;
 
     const cancel = new AbortController();
-    const deriving = startHostSide(deps, context, files);
+    const deriving = handled(prepareHostSide(deps, context, files, pi));
     const allowlist = writeBackTableOf(context.effective.config.writeBack);
     const preparation = prepareAll(
       {
@@ -721,6 +719,7 @@ const startPi = (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs
 };
 
 export const launch = async (args: string[], deps: CliDeps) => {
+  const pi = await requireJobPi(deps);
   const piArgs = args.filter((arg) => arg !== NO_SANDBOX);
 
   if (piArgs.length !== args.length) {
@@ -728,12 +727,12 @@ export const launch = async (args: string[], deps: CliDeps) => {
 
     checkHostRoot(deps, context);
 
-    return runHostPi(deps, context, piArgs);
+    return runHostPi(deps, context, pi, piArgs);
   }
 
   const { context, backend } = await openContext(deps, "sandbox");
 
-  return withSandbox(deps, context, backend, (sandbox) => startPi(deps, context, sandbox, piArgs), {
+  return withSandbox(deps, context, backend, pi, (sandbox) => startPi(deps, context, sandbox, piArgs), {
     writeBack: true,
     piArgs,
   });

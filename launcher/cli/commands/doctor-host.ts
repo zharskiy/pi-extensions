@@ -27,6 +27,8 @@ import {
   warned,
 } from "./doctor-checks.ts";
 
+const NOT_USED_PIS = "a pi found only on PATH or in a project's node_modules is not used";
+
 const CONNECT_TIMEOUT_MS = 3000;
 
 const MINUTE_MS = 60_000;
@@ -43,7 +45,7 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
   if (job === undefined) {
     const missing = missingPi(deps);
 
-    return failed(missing.problem, { reasons: [missing.ignored, missing.effect], hint: missing.fix });
+    return failed(missing.message, { reasons: [NOT_USED_PIS], hint: missing.hint });
   }
 
   const tested = await testedPiVersion();

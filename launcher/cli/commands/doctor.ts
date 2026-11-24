@@ -20,7 +20,7 @@ import { errorMessage, LauncherError } from "../../shared/index.ts";
 import { hostBinds } from "../../workspace/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, lineSink, writeLines } from "../deps.ts";
-import { missingPiText } from "../host-pi.ts";
+import { resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
@@ -537,6 +537,18 @@ const notRun = (stage: Stage | undefined): NamedCheck => ({
 });
 
 const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend, run: Run) => {
+  const pi = await resolveJobPi(deps);
+
+  if (pi === undefined) {
+    run.checks.push({
+      name: "sandbox",
+      section: "sandbox",
+      result: skipped("not started: there is no host pi"),
+    });
+
+    return undefined;
+  }
+
   const seen: { failed?: Stage; rules?: CredentialRule[] } = {};
   const report = (stage: Stage, outcome: StageOutcome) => {
     seen.failed ??= outcome.ok ? undefined : stage;
@@ -558,7 +570,7 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
 
     return 0;
   };
-  const code = await withSandbox(deps, context, backend, use, {
+  const code = await withSandbox(deps, context, backend, pi, use, {
     report,
     progress: run.progress.line,
     signIn: false,
@@ -675,8 +687,7 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
   return signal;
 };
 
-const noticesOf = (deps: CliDeps, lines: string[]) =>
-  [...new Set(lines.map(withoutPrefix))].filter((notice) => notice !== missingPiText(deps));
+const noticesOf = (lines: string[]) => [...new Set(lines.map(withoutPrefix))];
 
 export const doctorCommand = async (deps: CliDeps, args: string[]) => {
   const checks: NamedCheck[] = [];
@@ -688,7 +699,7 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
 
     writeLines(
       deps.stdout,
-      renderReport(checks, noticesOf(deps, notices), {
+      renderReport(checks, noticesOf(notices), {
         verbose: args.includes(VERBOSE_FLAG),
         color: colorOf(deps),
         home: deps.home,

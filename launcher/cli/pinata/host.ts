@@ -9,10 +9,9 @@ import {
 } from "../../shared/index.ts";
 import { vmSessions } from "../busy.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
-import { missingPi, resolveJobPi } from "../host-pi.ts";
 import { intercept } from "../intercept.ts";
 import { ChildFailure, quietDeps, runQuietly, type Steps } from "../steps.ts";
-import { isOlderVersion, launcherVersion, PI_PACKAGE } from "../versions.ts";
+import { isOlderVersion, launcherVersion } from "../versions.ts";
 
 export const PACKAGE = "@zharskiy/pinata";
 
@@ -32,17 +31,6 @@ export const hostPiQuietly = async (deps: CliDeps, args: string[]) => {
 };
 
 const COLIMA = { pending: "Installing colima", done: "Installed colima", failed: "Could not install colima" };
-
-export const requireHostPi = async (deps: CliDeps, command: string) => {
-  if ((await resolveJobPi(deps)) !== undefined) {
-    return;
-  }
-
-  throw new LauncherError(
-    `pi is not installed on the host (${missingPi(deps).problem}), and pinata does not install it`,
-    `install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g ${PI_PACKAGE}, then run pinata ${command} again`,
-  );
-};
 
 export const preflight = async (deps: CliDeps, steps: Steps) => {
   if (process.getuid?.() === 0) {

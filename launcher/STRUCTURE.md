@@ -69,7 +69,7 @@ cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp, every update, config, auth, help, --list-models, --export and --version run on the host
 cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
-cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi, not linked in, outside the workspace root and every folder a sandbox has run in), spawning it for host jobs (spawnHostJob), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
+cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi, not linked in, outside the workspace root and every folder a sandbox has run in), the one check install, update and a launch share (requireJobPi) and its error (missingPi, also the doctor's pi check), spawning it for host jobs (spawnHostJob) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per install, their hashes kept in seen.json
 cli/versions.ts                pinata version, the tested pi version and image pi version, the version compare
 cli/commands/status.ts         pinata status, with each configured service and its state and the shared pi folder
@@ -92,7 +92,7 @@ cli/commands/tls-probe.ts      the typed TLS handshake script those checks run a
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
 cli/pinata/run.ts              pinata: the one command table, install, update and uninstall and the sandbox commands, with their flags
-cli/pinata/host.ts             the package name, the host pi requirement (no pi stops install and update before they change anything), the preflight (root, Node, colima installed with brew when missing), host pi run captured, the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
+cli/pinata/host.ts             the package name, the preflight (root, Node, colima installed with brew when missing), host pi run captured, the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
 cli/pinata/install.ts          pinata install: host pi requirement, --config check, pi install of the package, the link, the PATH blocks, the config file, then pinata init, and the closing block (installed, nothing changed, or up to date after an update)
 cli/pinata/update.ts           pinata update: checkout refusal, host pi requirement, preflight, npm install -g of the package, then the new copy's pinata install --yes, told the old version
 cli/pinata/uninstall.ts        pinata uninstall: busy refusal, removeSandbox (releaseSandbox with the colima profile deleted under its locks, shared with restart), the link, pi remove, the PATH blocks, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the PATH blocks and npm uninstall -g
@@ -459,7 +459,7 @@ tests/cli/doctor-report.test.ts      the doctor report renderer: the default vie
 tests/cli/doctor-tls.test.ts         the tls inspection check against a local TLS server signed by a test CA behind a parent proxy: not inspected, trusted via extras, root in a keychain, root not found, network failure
 tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
-tests/cli/host-pi.test.ts            host pi selection
+tests/cli/host-pi.test.ts            host pi selection, and a launch without one refused before it changes anything
 tests/cli/setup-fixtures.ts          host facts, folder candidates, the automatic size, a running VM and config documents for the setup tests
 tests/cli/setup-detect.test.ts       detectHost: the budget, an inspect failure, free disk and sessions
 tests/cli/setup-screens.test.ts      the setup screen texts
@@ -492,6 +492,7 @@ tests/cli/pinata/support.ts          a pinata run over the CLI harness: npm pref
 tests/cli/pinata/install.test.ts     pinata install
 tests/cli/pinata/update.test.ts      pinata update
 tests/cli/pinata/uninstall.test.ts   pinata uninstall
+tests/cli/pinata/no-host-pi.test.ts  the commands that run without a host pi: status, list, config, stop, restart, both uninstall forms and doctor
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch
 tests/cli/launch.test.ts             the launch
 tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and the VM shares of a launch

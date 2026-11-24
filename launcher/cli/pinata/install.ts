@@ -9,19 +9,12 @@ import {
 } from "../../shared/index.ts";
 import { acceptAll, initCommand } from "../commands/init.ts";
 import { type CliDeps, isTerminal, pathsOf } from "../deps.ts";
+import { requireJobPi } from "../host-pi.ts";
 import { isSet } from "../prompt/terminal.ts";
 import { stepsFrontEnd } from "../setup/apply.ts";
 import { type Steps, stepsOf, tilde } from "../steps.ts";
 import { launcherVersion } from "../versions.ts";
-import {
-  hostPiQuietly,
-  isCheckout,
-  PACKAGE,
-  piSources,
-  preflight,
-  refuseBusy,
-  requireHostPi,
-} from "./host.ts";
+import { hostPiQuietly, isCheckout, PACKAGE, piSources, preflight, refuseBusy } from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
 import { inspectPinataLink, inspectShim, installPinataLink, installShim, removePinataLink } from "./shim.ts";
 
@@ -110,7 +103,7 @@ const announceUpdate = async (deps: CliDeps, steps: Steps) => {
 };
 
 export const install = async (deps: CliDeps, packageDir: string, flags: InstallFlags) => {
-  await requireHostPi(deps, "install");
+  await requireJobPi(deps, "install");
 
   const config = flags.config === undefined ? undefined : await readConfig(deps, flags.config);
   const checkout = await isCheckout(deps, packageDir);

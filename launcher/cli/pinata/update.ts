@@ -1,9 +1,10 @@
 import { join } from "node:path";
 import { LauncherError } from "../../shared/index.ts";
 import type { CliDeps } from "../deps.ts";
+import { requireJobPi } from "../host-pi.ts";
 import { runQuietly, stepsOf } from "../steps.ts";
 import { launcherVersion } from "../versions.ts";
-import { isCheckout, PACKAGE, preflight, refuseBusy, requireHostPi } from "./host.ts";
+import { isCheckout, PACKAGE, preflight, refuseBusy } from "./host.ts";
 import { UPDATED_FROM } from "./install.ts";
 
 export const update = async (deps: CliDeps, packageDir: string, version?: string) => {
@@ -11,7 +12,7 @@ export const update = async (deps: CliDeps, packageDir: string, version?: string
     throw new LauncherError("this is a checkout: git pull, then pinata install");
   }
 
-  await requireHostPi(deps, "update");
+  await requireJobPi(deps, "update");
 
   const steps = stepsOf(deps);
 

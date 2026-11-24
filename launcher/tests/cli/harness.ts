@@ -143,7 +143,7 @@ export const holdLaunch = async (harness: HarnessPaths) => {
 };
 
 export const noHostPiLine = (agentDir: string) =>
-  `no managed pi in ${agentDir} and no pi in npm's global packages (a pi found only on PATH or in a project's node_modules is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, and run pinata install again`;
+  `pi is not installed on the host (no managed pi in ${agentDir} and no pi in npm's global packages), and pinata does not install it\n  hint: install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, then run pinata install again`;
 
 export interface DoctorCheck {
   section: string;

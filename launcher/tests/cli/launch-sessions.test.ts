@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
 import { openContext } from "../../cli/context.ts";
 import { CLEANUP_WAITING, withGroundLock } from "../../cli/ground.ts";
+import { requireJobPi } from "../../cli/host-pi.ts";
 import { run, runPinata } from "../../cli/index.ts";
 import { withSandbox } from "../../cli/launch.ts";
 import { beginLaunch, finishLaunch } from "../../cli/launches.ts";
@@ -485,7 +486,9 @@ describe("a failure right after the launch registered", () => {
       },
     };
 
-    await expect(withSandbox(harness.deps, failing, backend, async () => 0)).rejects.toThrow(
+    const pi = await requireJobPi(harness.deps);
+
+    await expect(withSandbox(harness.deps, failing, backend, pi, async () => 0)).rejects.toThrow(
       "write-back table failed",
     );
 
