@@ -75,10 +75,10 @@ cli/versions.ts                pinata version, the tested pi version and image p
 cli/commands/status.ts         pinata status, with each configured service and its state, the shared pi folder and, in one place, what older launchers left
 cli/commands/config.ts         pinata config, with the effective write-back keys of each file and their source
 cli/commands/egress.ts         pinata egress allow, revoke and list
-cli/commands/restart.ts        pinata restart: live-session refusal, the VM started, the y/N for data the next pi cannot rebuild, then every folder released and under the agent, render, ground and registry locks the ground, volumes, managed images and host records removed, the VM restarted, and every line it prints in one table
+cli/commands/restart.ts        pinata restart: live-session refusal, the VM started (and stopped again when the y/N is declined or refused), the y/N for data the next pi cannot rebuild, then every folder released (a busy one stops it) and under the ground, agent, render and registry locks the ground, volumes, managed images and host records removed (the pi folder's records only with its volume), the VM restarted or kept running for a session, what stayed named with exit 1, and every line it prints in one table
 cli/commands/stop.ts           pinata stop: the orphan sweep, which stops the ground and the proxy when idle, then the VM when no session runs in it
 cli/commands/uninstall.ts      releaseSandbox for pinata uninstall: live-session refusal, each folder released, then under the ground and launch registry locks a second session count and the install's services, relay, network, proxy and volumes and the managed images, host-side release, with the lines it prints
-cli/release.ts                 what the uninstall and pinata restart share: every known or engine-labelled folder released under its preparation lock when free, the install's volumes and managed images removed, and the ground and registry locks with the second session count
+cli/release.ts                 what the uninstall and pinata restart share: every known or engine-labelled folder released under its preparation lock when free, the install's volumes and managed images removed with the ones that stayed, and the ground and registry locks with the second session count and an optional hold between them
 cli/commands/list.ts           pinata list: the VM's state and size and, when it runs, every agent container in it with its folder, without starting it
 cli/commands/init.ts           pinata init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
 cli/commands/doctor.ts         pinata doctor: stages, probes and host checks as checks by section, the vm size and file cache checks, the denials matched to each rule, the blocked warnings, captured notices and the progress line
@@ -509,7 +509,7 @@ tests/cli/sandbox-proxy.test.ts      the proxy input
 tests/cli/terminal.test.ts           the host terminal
 tests/cli/notices.test.ts            notices printed once per install
 tests/cli/volumes.test.ts            volumes in the sweep and status
-tests/cli/restart.test.ts            pinata restart: the session refusals, the stopped VM, the y/N and its refusal without a terminal, every volume kind, images and records removed, another install's volumes kept, the old flags and name
+tests/cli/restart.test.ts            pinata restart: the session refusals, the recheck under the locks, a busy folder, the stopped VM and its order, the y/N and its refusal without a terminal or with CI, a declined VM stopped again, a volume that stays, a refused stop and a failed second start, every volume kind, images and records removed, another install's volumes kept, the old flags and name
 tests/live/colima.live.test.ts       the conformance suite, volume ownership, read-only folder binds on the share (any letter case) and the image hint on the real engine
 tests/live/colima-relay.live.test.ts  the relay on the real engine
 tests/live/custom-provider.live.test.ts  a custom provider through the proxy

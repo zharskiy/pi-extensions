@@ -48,10 +48,16 @@ export const releaseRepos = async (deps: CliDeps, stateDir: string, backend: Bac
   return { released, known: known.length };
 };
 
-const settled = async <T, R>(items: T[], remove: (item: T) => Promise<R>) =>
-  (await Promise.allSettled(items.map(remove))).flatMap((outcome) =>
-    outcome.status === "fulfilled" ? [outcome.value] : [],
-  );
+const settled = async <T, R>(items: T[], remove: (item: T) => Promise<R>) => {
+  const outcomes = await Promise.allSettled(items.map(remove));
+
+  return {
+    done: outcomes.flatMap((outcome) => (outcome.status === "fulfilled" ? [outcome.value] : [])),
+    failed: outcomes.flatMap((outcome, index) =>
+      outcome.status === "rejected" ? [{ item: items[index] as T, reason: outcome.reason as unknown }] : [],
+    ),
+  };
+};
 
 export const removeStored = async (backend: Backend) => {
   const volumes = await backend.listVolumes();
@@ -63,20 +69,36 @@ export const removeStored = async (backend: Backend) => {
   const images = (await backend.listImages()).filter((image) => isManaged(image.labels));
   const removedImages = await settled(images, (image) => backend.removeImage(image.id));
 
-  return { volumes: removedVolumes, images: removedImages };
+  return {
+    volumes: removedVolumes.done,
+    images: removedImages.done,
+    keptVolumes: removedVolumes.failed.map(({ item, reason }) => ({ name: item.name, reason })),
+    keptImages: removedImages.failed.map(({ item, reason }) => ({ name: item.id, reason })),
+  };
 };
 
 export type InstallRelease<T> = { busy: VmBusy } | { released: T };
 
-export const withInstallReleased = <T>(deps: CliDeps, stateDir: string, release: () => Promise<T>) =>
+type Hold = <R>(action: () => Promise<R>) => Promise<R>;
+
+const holdNothing: Hold = (action) => action();
+
+export const withInstallReleased = <T>(
+  deps: CliDeps,
+  stateDir: string,
+  release: () => Promise<T>,
+  hold: Hold = holdNothing,
+) =>
   withGroundLock({ stateDir, progress: (line) => writeLine(deps.stderr, line) }, () =>
-    withLaunchLock(stateDir, async (): Promise<InstallRelease<T>> => {
-      const sessions = await vmSessions(deps.backend(), stateDir);
+    hold(() =>
+      withLaunchLock(stateDir, async (): Promise<InstallRelease<T>> => {
+        const sessions = await vmSessions(deps.backend(), stateDir);
 
-      if (sessions.count > 0) {
-        return { busy: sessions };
-      }
+        if (sessions.count > 0) {
+          return { busy: sessions };
+        }
 
-      return { released: await release() };
-    }),
+        return { released: await release() };
+      }),
+    ),
   );

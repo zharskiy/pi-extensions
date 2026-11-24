@@ -199,6 +199,8 @@ export const configuredVmStart = async (deps: CliDeps, config: SandboxConfig) =>
   const binds = hostBinds(config.mounts.binds, { home: deps.home, env: deps.env, roots: rootPaths(config) });
   const plan = await prepareVmShares(deps, config.workspaceRoot, binds);
 
+  writeNotices(deps, plan.notices);
+
   return { shares: plan.shares, size };
 };
 

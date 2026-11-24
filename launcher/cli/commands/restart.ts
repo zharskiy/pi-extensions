@@ -1,5 +1,12 @@
 import { rm } from "node:fs/promises";
-import { type Backend, busyText, installIdOf, LABELS, type VolumeSummary } from "../../backend/index.ts";
+import {
+  type Backend,
+  busyText,
+  installIdOf,
+  LABELS,
+  type VmBusy,
+  type VolumeSummary,
+} from "../../backend/index.ts";
 import { loadEffectiveConfig, type SandboxConfig } from "../../config/index.ts";
 import {
   agentVolumeName,
@@ -10,7 +17,7 @@ import {
   mountedVolumes,
 } from "../../container/index.ts";
 import { removeBuildLeftovers } from "../../image/index.ts";
-import { knownRepos, LauncherError, stateLayout, withFileLock } from "../../shared/index.ts";
+import { errorMessage, knownRepos, LauncherError, stateLayout, withFileLock } from "../../shared/index.ts";
 import { vmSessions } from "../busy.ts";
 import { type CliDeps, pathsOf, writeLine, writeLines } from "../deps.ts";
 import { removeGround } from "../ground.ts";
@@ -40,6 +47,13 @@ interface Wiped {
   containers: number;
   volumes: VolumeKind[];
   images: number;
+  kept: string[];
+}
+
+interface VmRestart {
+  line: string;
+  restarted: boolean;
+  failure?: unknown;
 }
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
@@ -51,6 +65,8 @@ const TEXT = {
   busyHint: "exit them, then run pinata restart again",
   meanwhile: (sessions: Parameters<typeof busyText>[0]) =>
     `a pi session started in the sandbox VM meanwhile (${busyText(sessions)}), so the sandbox network, services, volumes and images were kept`,
+  repoMeanwhile: (repoHash: string) =>
+    `a pi session of ${repoHash.slice(0, 12)} started meanwhile, so the sandbox network, services, volumes and images were kept`,
   meanwhileHint: "exit it, then run pinata restart again",
   stakeLines: (stake: Stake) => [
     ...stake.services.map((service) => `the data of service ${service}`),
@@ -78,8 +94,10 @@ const TEXT = {
     return `removed ${plural(kinds.length, "volume", "volumes")}${counts.length === 0 ? "" : `: ${counts.join(", ")}`}`;
   },
   removedImages: (count: number) => `removed ${plural(count, "image", "images")}`,
+  notRemoved: (what: string, reason: unknown) => `could not remove ${what}: ${errorMessage(reason)}`,
   restarted: "restarted the sandbox VM",
   notRestarted: "the sandbox VM did not restart; the next pi starts it",
+  keptRunning: (sessions: VmBusy) => `the sandbox VM kept running, since ${busyText(sessions)} in it`,
   nextPi: "the next pi rebuilds the image and reinstalls your extensions",
 };
 
@@ -183,45 +201,63 @@ const confirmed = async (deps: CliDeps, stake: Stake) => {
   return askAtTerminal(deps, ui, stake);
 };
 
-const clearRecords = async (stateDir: string) => {
+const clearRecords = async (stateDir: string, agentKept: boolean) => {
   const layout = stateLayout(stateDir);
   const legacy = (await knownRepos(stateDir)).map((hash) => layout.repo(hash).legacy.sync);
-  const paths = [layout.render, layout.renders, layout.sync.directory, layout.imageRecord, ...legacy];
+  const agentRecords = agentKept ? [] : [layout.render, layout.sync.directory, ...legacy];
+  const paths = [layout.renders, layout.imageRecord, ...agentRecords];
 
   await Promise.all(paths.map((path) => rm(path, { recursive: true, force: true })));
 
   await removeBuildLeftovers(stateDir);
 };
 
-const releaseInstall = (deps: CliDeps, stateDir: string, backend: Backend) => {
-  const progress = (line: string) => writeLine(deps.stderr, line);
+const holdAgentFiles =
+  (deps: CliDeps, stateDir: string) =>
+  async <R>(action: () => Promise<R>) => {
+    const sessions = await vmSessions(deps.backend(), stateDir);
 
-  return withAgentLock({ stateDir, progress }, () =>
-    withFileLock(
-      stateLayout(stateDir).renderLock,
-      () =>
-        withInstallReleased(deps, stateDir, async () => {
-          await removeGround(deps, stateDir, backend);
+    if (sessions.count > 0) {
+      throw new LauncherError(TEXT.meanwhile(sessions), TEXT.meanwhileHint);
+    }
 
-          const stored = await removeStored(backend);
+    const progress = (line: string) => writeLine(deps.stderr, line);
 
-          await clearRecords(stateDir);
+    return withAgentLock({ stateDir, progress }, () =>
+      withFileLock(stateLayout(stateDir).renderLock, action, { timeoutMs: RENDER_LOCK_TIMEOUT_MS }),
+    );
+  };
 
-          return stored;
-        }),
-      { timeoutMs: RENDER_LOCK_TIMEOUT_MS },
-    ),
-  );
+const releaseInstall = (deps: CliDeps, config: SandboxConfig, backend: Backend) => {
+  const { stateDir } = pathsOf(deps);
+  const kind = kindOf(config, stateDir);
+
+  const release = async () => {
+    await removeGround(deps, stateDir, backend);
+
+    const stored = await removeStored(backend);
+    const agentKept = stored.keptVolumes.some((volume) => kind(volume.name) === "pi folder");
+
+    await clearRecords(stateDir, agentKept);
+
+    return stored;
+  };
+
+  return withInstallReleased(deps, stateDir, release, holdAgentFiles(deps, stateDir));
 };
 
 const wipe = async (deps: CliDeps, config: SandboxConfig, backend: Backend): Promise<Wiped> => {
   const { stateDir } = pathsOf(deps);
   const before = (await listLauncherContainers(backend)).length;
   const labelsOf = new Map((await backend.listVolumes()).map((volume) => [volume.name, volume.labels]));
+  const { released } = await releaseRepos(deps, stateDir, backend);
+  const busyRepo = released.find((repo) => repo.busy);
 
-  await releaseRepos(deps, stateDir, backend);
+  if (busyRepo !== undefined) {
+    throw new LauncherError(TEXT.repoMeanwhile(busyRepo.repoHash), TEXT.meanwhileHint);
+  }
 
-  const install = await releaseInstall(deps, stateDir, backend);
+  const install = await releaseInstall(deps, config, backend);
 
   if ("busy" in install) {
     throw new LauncherError(TEXT.meanwhile(install.busy), TEXT.meanwhileHint);
@@ -229,33 +265,60 @@ const wipe = async (deps: CliDeps, config: SandboxConfig, backend: Backend): Pro
 
   const after = (await listLauncherContainers(backend)).length;
   const kind = kindOf(config, stateDir);
+  const { volumes, images, keptVolumes, keptImages } = install.released;
 
   return {
     containers: Math.max(before - after, 0),
-    volumes: install.released.volumes.map((name) => kind(name, labelsOf.get(name))),
-    images: install.released.images.filter(Boolean).length,
+    volumes: volumes.map((name) => kind(name, labelsOf.get(name))),
+    images: images.filter(Boolean).length,
+    kept: [
+      ...keptVolumes.map((volume) => TEXT.notRemoved(`volume ${volume.name}`, volume.reason)),
+      ...keptImages.map((image) => TEXT.notRemoved(`image ${image.name}`, image.reason)),
+    ],
   };
 };
 
-const restartVm = async (deps: CliDeps, backend: Backend, start: Parameters<typeof startConfiguredVm>[1]) => {
+const restartVm = async (
+  deps: CliDeps,
+  backend: Backend,
+  start: Parameters<typeof startConfiguredVm>[1],
+): Promise<VmRestart> => {
   const { stateDir } = pathsOf(deps);
+  const refusal: { sessions?: VmBusy } = {};
+
+  const busy = async () => {
+    const sessions = await vmSessions(backend, stateDir);
+
+    if (sessions.count > 0) {
+      refusal.sessions = sessions;
+    }
+
+    return sessions;
+  };
 
   try {
-    await backend.vm.stop({ busy: () => vmSessions(backend, stateDir) });
+    await backend.vm.stop({ busy });
+  } catch (error) {
+    return refusal.sessions === undefined
+      ? { line: TEXT.notRestarted, restarted: false, failure: error }
+      : { line: TEXT.keptRunning(refusal.sessions), restarted: false };
+  }
 
+  try {
     await startConfiguredVm(backend, start, (line) => writeLine(deps.stderr, line));
 
-    return undefined;
+    return { line: TEXT.restarted, restarted: true };
   } catch (error) {
-    return error;
+    return { line: TEXT.notRestarted, restarted: false, failure: error };
   }
 };
 
-const wipedLines = (wiped: Wiped, restarted: boolean) => [
+const wipedLines = (wiped: Wiped, vm: VmRestart) => [
   TEXT.removedContainers(wiped.containers),
   TEXT.removedVolumes(wiped.volumes),
   TEXT.removedImages(wiped.images),
-  restarted ? TEXT.restarted : TEXT.notRestarted,
+  ...wiped.kept,
+  vm.line,
   TEXT.nextPi,
 ];
 
@@ -274,24 +337,35 @@ export const restartCommand = async (deps: CliDeps) => {
 
   const start = await configuredVmStart(deps, config);
 
+  const wasRunning = (await backend.detect()).available;
+
   await startConfiguredVm(backend, start, (line) => writeLine(deps.stderr, line));
 
   const stake = stakeOf(config, stateDir, await backend.listVolumes());
+  const agreed = await confirmed(deps, stake).catch((error: unknown) => error);
 
-  if (!(await confirmed(deps, stake))) {
+  if (agreed !== true) {
+    if (!wasRunning) {
+      await backend.vm.stop({ busy: () => vmSessions(backend, stateDir) });
+    }
+
+    if (agreed !== false) {
+      throw agreed;
+    }
+
     writeLine(deps.stdout, TEXT.declined);
 
     return DECLINED_EXIT;
   }
 
   const wiped = await wipe(deps, config, backend);
-  const failure = await restartVm(deps, backend, start);
+  const vm = await restartVm(deps, backend, start);
 
-  writeLines(deps.stdout, wipedLines(wiped, failure === undefined));
+  writeLines(deps.stdout, wipedLines(wiped, vm));
 
-  if (failure !== undefined) {
-    throw failure;
+  if (vm.failure !== undefined) {
+    throw vm.failure;
   }
 
-  return 0;
+  return wiped.kept.length === 0 && vm.restarted ? 0 : 1;
 };

@@ -5,9 +5,19 @@ import { describe, expect, it } from "vitest";
 import { type Backend, installIdOf, LABELS } from "../../backend/index.ts";
 import type { CliDeps } from "../../cli/index.ts";
 import { run, runPinata } from "../../cli/index.ts";
+import { withAgentLock } from "../../cli/prepare.ts";
 import { agentVolumeName, configVolumeName, mountedVolumes } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
+import {
+  knownRepos,
+  LauncherError,
+  processMark,
+  repoHash,
+  sha256Hex,
+  shortHash,
+  stateLayout,
+  withFileLock,
+} from "../../shared/index.ts";
 import { FAKE_NETWORK } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { exists } from "../support/temp-dir.ts";
@@ -30,6 +40,13 @@ const switchable = (fake: Fake) => {
   const backend: Backend = {
     ...fake.backend,
     detect: async () => (vm.up ? { available: true } : { available: false, reason: "stopped" }),
+    removeVolume: async (name) => {
+      if (!vm.up) {
+        throw new Error("the sandbox VM is stopped");
+      }
+
+      await fake.backend.removeVolume(name);
+    },
     vm: {
       ...fake.backend.vm,
       ensureRunning: async () => {
@@ -68,6 +85,23 @@ const counted = (fake: Fake) => {
   };
 
   return { vm, backend };
+};
+
+const otherSession = (fake: Fake) =>
+  fake.addContainer({
+    name: "pinata-other",
+    labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.install]: "otherinstall" },
+    state: "running",
+    image: "x",
+  });
+
+const deferred = () => {
+  const gate: { open?: () => void } = {};
+  const opened = new Promise<void>((resolve) => {
+    gate.open = resolve;
+  });
+
+  return { opened, open: () => gate.open?.() };
 };
 
 const withTty = (deps: CliDeps) => {
@@ -155,7 +189,7 @@ describe("pinata restart", () => {
     const agent = agentVolumeName(installIdOf(harness.stateDir));
     const legacy = `${agent}-0123456789ab`;
     const repo = { [LABELS.repoHash]: sha256Hex(harness.repoRoot), [LABELS.repoRoot]: harness.repoRoot };
-    const overlay = `pinata-cache-${sha256Hex(harness.repoRoot).slice(0, 12)}-deadbeef`;
+    const overlay = `pinata-cache-${installIdOf(harness.stateDir)}-${shortHash(repoHash(harness.repoRoot))}-${sha256Hex("/home/pi/.cache").slice(0, 8)}`;
     const [cache] = mountedVolumes(sandboxConfig({ mounts: { volumes: [PACKAGE_CACHE] } }), harness.stateDir);
     const foreign = "pinata-cache-otherinstall-x";
 
@@ -249,9 +283,152 @@ describe("pinata restart", () => {
       },
     };
     const harness = await createHarness({ backend: () => backend });
+    const agent = agentVolumeName(installIdOf(harness.stateDir));
+
+    await fake.backend.ensureVolume(agent);
 
     expect(await runPinata(["restart"], harness.deps)).not.toBe(0);
     expect(harness.stderr()).toContain("colima would not start");
+    expect(fake.volumes.has(agent)).toBe(true);
+    expect(fake.imageRemovals).toEqual([]);
+  });
+
+  it("removes nothing when a session starts while it waits for the shared pi folder", async () => {
+    const fake = createFakeBackend();
+    const { vm, backend } = counted(fake);
+    const harness = await createHarness({ backend: () => backend });
+    const agent = agentVolumeName(installIdOf(harness.stateDir));
+    const gate = deferred();
+    const progress = () => undefined;
+    const holding = withAgentLock({ stateDir: harness.stateDir, progress }, () => gate.opened);
+
+    await fake.backend.ensureVolume(agent);
+
+    const exit = runPinata(["restart"], harness.deps);
+
+    await until(() =>
+      harness.stderr().includes("waiting for another pi session to finish with the shared pi folder"),
+    );
+
+    otherSession(fake);
+
+    gate.open();
+
+    await holding;
+
+    expect(await exit).toBe(1);
+    expect(harness.stderr()).toContain("a pi session started in the sandbox VM meanwhile");
+    expect(fake.volumes.has(agent)).toBe(true);
+    expect(vm.stops).toBe(0);
+  });
+
+  it("removes nothing when a folder's sandbox is being prepared meanwhile", async () => {
+    const fake = createFakeBackend();
+    const { vm, backend } = counted(fake);
+    const harness = await createHarness({ backend: () => backend });
+    const agent = agentVolumeName(installIdOf(harness.stateDir));
+
+    await run([], harness.deps);
+
+    const [hash = ""] = await knownRepos(harness.stateDir);
+    const prepareLock = stateLayout(harness.stateDir).repo(hash).prepareLock;
+    const exit = await withFileLock(prepareLock, () => runPinata(["restart"], harness.deps));
+
+    expect(exit).toBe(1);
+    expect(harness.stderr()).toContain(`a pi session of ${hash.slice(0, 12)} started meanwhile`);
+    expect(fake.volumes.has(agent)).toBe(true);
+    expect(await exists(stateLayout(harness.stateDir).render)).toBe(true);
+    expect(vm.stops).toBe(0);
+  });
+
+  it("names a volume it could not remove, keeps the pi folder's records and fails", async () => {
+    const fake = createFakeBackend();
+    const { vm, backend } = counted(fake);
+    const harness = await createHarness({
+      backend: () => ({
+        ...backend,
+        removeVolume: async (name) => {
+          if (name.startsWith("pinata-agent-")) {
+            throw new LauncherError(`volume ${name} is in use by a sandbox container`);
+          }
+
+          await fake.backend.removeVolume(name);
+        },
+      }),
+    });
+    const layout = stateLayout(harness.stateDir);
+    const own = agentVolumeName(installIdOf(harness.stateDir));
+
+    await run([], harness.deps);
+
+    await mkdir(layout.sync.directory, { recursive: true });
+
+    await writeFile(layout.imageRecord, "{}");
+
+    expect(await runPinata(["restart"], harness.deps)).toBe(1);
+    expect(fake.volumes.has(own)).toBe(true);
+    expect(harness.stdout()).toContain(
+      `could not remove volume ${own}: volume ${own} is in use by a sandbox container\n`,
+    );
+    expect(await exists(layout.render)).toBe(true);
+    expect(await exists(layout.sync.directory)).toBe(true);
+    expect(await exists(layout.imageRecord)).toBe(false);
+    expect(vm.stops).toBe(1);
+  });
+
+  it("says the VM kept running when a session starts before it stops", async () => {
+    const fake = createFakeBackend();
+    const backend: Backend = {
+      ...fake.backend,
+      vm: {
+        ...fake.backend.vm,
+        ensureRunning: async () => undefined,
+        stop: async ({ busy }) => {
+          otherSession(fake);
+
+          const sessions = await busy();
+
+          if (sessions.count > 0) {
+            throw new LauncherError(
+              "stopping the sandbox VM would end them",
+              "exit them and run pinata stop again",
+            );
+          }
+
+          return "stopped";
+        },
+      },
+    };
+    const harness = await createHarness({ backend: () => backend });
+
+    expect(await runPinata(["restart"], harness.deps)).toBe(1);
+    expect(harness.stdout()).toContain("the sandbox VM kept running, since 1 pi session is running");
+    expect(harness.stdout()).not.toContain("the sandbox VM did not restart");
+    expect(harness.stderr()).not.toContain("pinata stop");
+  });
+
+  it("says the VM did not restart when the second start fails", async () => {
+    const fake = createFakeBackend();
+    const vm = { starts: 0 };
+    const backend: Backend = {
+      ...fake.backend,
+      vm: {
+        ...fake.backend.vm,
+        ensureRunning: async () => {
+          vm.starts += 1;
+
+          if (vm.starts > 1) {
+            throw new Error("colima would not start again");
+          }
+        },
+        stop: async () => "stopped",
+      },
+    };
+    const harness = await createHarness({ backend: () => backend });
+
+    expect(await runPinata(["restart"], harness.deps)).not.toBe(0);
+    expect(harness.stdout()).toContain("the sandbox VM did not restart; the next pi starts it\n");
+    expect(harness.stderr()).toContain("colima would not start again");
   });
 
   it("refuses without a terminal when service data is at stake, and removes nothing", async () => {
@@ -262,6 +439,44 @@ describe("pinata restart", () => {
     expect(harness.stderr()).toContain("hint: run pinata restart at a terminal to confirm");
     expect(fake.volumes.has(data)).toBe(true);
     expect(vm.stops).toBe(0);
+  });
+
+  it("refuses with CI set, removes nothing and stops the VM it started", async () => {
+    const fake = createFakeBackend();
+    const { vm, backend } = switchable(fake);
+    const harness = await createHarness({ backend: () => backend, env: { CI: "1" } });
+    const data = configVolumeName(harness.stateDir, "db-data");
+
+    await harness.writeJson(harness.userConfigFile, { services: SERVICES });
+
+    await fake.backend.ensureVolume(data);
+
+    expect(await runPinata(["restart"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain("the data of service db");
+    expect(harness.stderr()).toContain("CI is set");
+    expect(fake.volumes.has(data)).toBe(true);
+    expect(vm).toEqual({ up: false, starts: 1, stops: 1 });
+  });
+
+  it("stops the VM it started when the answer is no", async () => {
+    const fake = createFakeBackend();
+    const { vm, backend } = switchable(fake);
+    const harness = await createHarness({ backend: () => backend, env: { PINATA_PLAIN: "1" } });
+    const data = configVolumeName(harness.stateDir, "db-data");
+    const tty = withTty(harness.deps);
+
+    await harness.writeJson(harness.userConfigFile, { services: SERVICES });
+
+    await fake.backend.ensureVolume(data);
+
+    const exit = runPinata(["restart"], tty.deps);
+
+    await answer(tty, "n");
+
+    expect(await exit).toBe(130);
+    expect(fake.volumes.has(data)).toBe(true);
+    expect(vm).toEqual({ up: false, starts: 1, stops: 1 });
+    expect(harness.stdout()).toContain("nothing was removed\n");
   });
 
   it("removes nothing when the answer is no", async () => {
