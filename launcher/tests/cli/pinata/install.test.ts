@@ -1,6 +1,7 @@
 import { lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { launcherVersion } from "../../../cli/versions.ts";
 import { exists } from "../../support/temp-dir.ts";
 import { createPinata } from "./support.ts";
 
@@ -23,7 +24,9 @@ describe("pinata install", () => {
       await writeFile(zshrc, rc, "latin1");
 
       expect(await pinata.run("install", "--yes")).toBe(0);
-      expect(await pinata.packages()).toEqual([global ? "npm:@zharskiy/pinata@0.4.0" : pinata.packageDir]);
+      expect(await pinata.packages()).toEqual([
+        global ? `npm:@zharskiy/pinata@${await launcherVersion()}` : pinata.packageDir,
+      ]);
       expect(await readlink(pinata.shim)).toBe(join(pinata.packageDir, "launcher", "bin", bin));
       expect(await readFile(zshrc, "latin1")).toBe(`${rc}\n${BLOCK(pinata.home)}`);
 
