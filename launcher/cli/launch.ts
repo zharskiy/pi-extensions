@@ -44,7 +44,6 @@ import { writeOnce } from "./notices.ts";
 import { runSetup, withAgentLock, withPrepareLock } from "./prepare.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
-import { imagePiVersion } from "./versions.ts";
 import {
   assertMemoryFitsVm,
   assertVmFitsHost,
@@ -184,7 +183,7 @@ const prepareImage = (
     env: deps.env,
     trustPem: parts.host.trust.extraPemPath,
     proxyCaPem: parts.host.trust.caCertPath,
-    versions: async () => ({ pi: await imagePiVersion(parts.host.pi) }),
+    versions: async () => ({ pi: parts.host.pi.version }),
     preparing: () => parts.progress(PREPARING),
     waiting: () => parts.progress("pinata: waiting for the image build in another session"),
     progress: (step) => parts.progress(`pinata: build: ${step}`),

@@ -6,7 +6,6 @@ import { isSandboxWritable } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
 import { requireJobPi, resolveJobPi, sandboxReachOf, spawnHostJob } from "./host-pi.ts";
 import { type HostRoute, hostRoute } from "./host-routes.ts";
-import { imagePiVersion } from "./versions.ts";
 
 const LOCAL_FLAGS = ["-l", "--local"];
 
@@ -274,13 +273,14 @@ const updateCommand = (deps: CliDeps, argv: string[], args: string[]) =>
   isSelfUpdate(args) ? selfUpdate(deps) : hostUpdate(deps, argv, args);
 
 const sandboxPiVersion = async (deps: CliDeps) => {
+  const pi = await requireJobPi(deps);
   const { image } = (await loadEffectiveConfig({ env: deps.env, home: deps.home })).config;
 
   if (image.reference !== undefined && image.digest !== undefined) {
     return undefined;
   }
 
-  writeLine(deps.stdout, await imagePiVersion(await resolveJobPi(deps)));
+  writeLine(deps.stdout, pi.version);
 
   return 0;
 };

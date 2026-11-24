@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { pathsOf } from "../../cli/deps.ts";
 import { run } from "../../cli/index.ts";
-import { testedPiVersion } from "../../cli/versions.ts";
 import { repoHash, writeRepoRecord } from "../../shared/index.ts";
 import {
   createFakeBackend,
@@ -486,11 +485,12 @@ describe("pi commands that start no session", () => {
     expect(harness.calls).toEqual([]);
   });
 
-  it("prints the tested pi version when no host pi resolves, as the image build does", async () => {
+  it("refuses with the missing-pi line when no host pi resolves, as a launch does", async () => {
     const harness = await createHarness({ backend: noBackend, hostPi: false });
 
-    expect(await run(["--version"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe(`${await testedPiVersion()}\n`);
+    expect(await run(["--version"], harness.deps)).toBe(1);
+    expect(harness.stdout()).toBe("");
+    expect(harness.stderr()).toBe(`pinata: ${noHostPiLine(harness.hostAgentDir)}\n`);
   });
 
   it("asks pi inside a pinned image for its version", async () => {

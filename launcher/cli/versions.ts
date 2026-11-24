@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import type { HostPi } from "../hostpi/index.ts";
 import { LauncherError, launcherRoot, readJsonFile } from "../shared/index.ts";
 
 interface PackageManifest {
@@ -33,8 +32,6 @@ export const testedPiVersion = async () => {
 
   return version;
 };
-
-export const imagePiVersion = async (pi: HostPi | undefined) => pi?.version ?? (await testedPiVersion());
 
 const RELEASE_PARTS = 3;
 

@@ -55,7 +55,7 @@ const signInOnce = async (deps: CliDeps, context: LaunchContext, host: HostSide,
   const key = mcpAuthKey(server.name, server.url);
   const failedAt = (await readMcpLogins(context.stateDir))[key]?.failedAt;
 
-  if (host.pi === undefined || (failedAt !== undefined && deps.now() - failedAt < FAILURE_QUIET_MS)) {
+  if (failedAt !== undefined && deps.now() - failedAt < FAILURE_QUIET_MS) {
     return false;
   }
 

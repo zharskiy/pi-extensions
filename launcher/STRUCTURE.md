@@ -71,7 +71,7 @@ cli/intercept.ts               pi install, uninstall, remove, mcp, every update,
 cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
 cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi, not linked in, outside the workspace root and every folder a sandbox has run in), the one check install, update and a launch share (requireJobPi) and its error (missingPi, also the doctor's pi check), spawning it for host jobs (spawnHostJob) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per install, their hashes kept in seen.json
-cli/versions.ts                pinata version, the tested pi version and image pi version, the version compare
+cli/versions.ts                pinata version, the tested pi version, the version compare
 cli/commands/status.ts         pinata status as one closing block: the folder, then a row each for the runtime, services, containers, pi folder, proxy, image, overlays, volumes, launches and grants
 cli/commands/config.ts         pinata config: the effective config as JSON, the keys the config file sets and the written-back keys of each file; --json unchanged
 cli/commands/egress.ts         pinata egress allow, revoke and list
