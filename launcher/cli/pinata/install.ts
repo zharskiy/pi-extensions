@@ -7,12 +7,21 @@ import {
   readJsonObject,
   writeFileAtomic,
 } from "../../shared/index.ts";
-import { initCommand, YES_FLAG } from "../commands/init.ts";
+import { acceptAll, initCommand } from "../commands/init.ts";
 import { type CliDeps, isTerminal, pathsOf } from "../deps.ts";
-import { intercept } from "../intercept.ts";
 import { isSet } from "../prompt/terminal.ts";
+import { stepsFrontEnd } from "../setup/apply.ts";
+import { type Steps, stepsOf, tilde } from "../steps.ts";
 import { launcherVersion } from "../versions.ts";
-import { isCheckout, PACKAGE, piSources, preflight, refuseBusy, requireHostPi, say } from "./host.ts";
+import {
+  hostPiQuietly,
+  isCheckout,
+  PACKAGE,
+  piSources,
+  preflight,
+  refuseBusy,
+  requireHostPi,
+} from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
 import { inspectPinataLink, inspectShim, installPinataLink, installShim, removePinataLink } from "./shim.ts";
 
@@ -34,43 +43,82 @@ const readConfig = async (deps: CliDeps, given: string) => {
   return { file, value };
 };
 
-const ensureExtensions = async (deps: CliDeps, own: string) => {
+const EXTENSIONS = {
+  pending: "Registering pinata's extensions with pi",
+  done: "Registered pinata's extensions with pi",
+  failed: "Could not register pinata's extensions with pi",
+};
+
+const ensureExtensions = async (deps: CliDeps, steps: Steps, own: string) => {
   if ((await piSources(deps)).includes(own)) {
     return;
   }
 
-  const code = await intercept(["install", own], deps);
-
-  if (code !== 0) {
-    throw new LauncherError(`pi install ${own} exited with code ${code}`);
-  }
+  await steps.task(EXTENSIONS, () => hostPiQuietly(deps, ["install", own]));
 };
 
-const setup = async (deps: CliDeps, flags: InstallFlags) => {
+const setup = async (deps: CliDeps, steps: Steps, flags: InstallFlags) => {
   const configured = (await readJsonObject(pathsOf(deps).userConfigFile))?.workspaceRoot !== undefined;
 
   if (configured && flags.config === undefined && (await deps.backend().vm.inspect()).state !== "absent") {
-    return 0;
+    return { code: 0, asked: false };
   }
 
   const ask =
     isTerminal(deps.terminal.stdin) && !flags.yes && flags.config === undefined && !isSet(deps.env.CI);
 
-  return initCommand(deps, ask && !configured ? [] : [YES_FLAG]);
+  if (ask && !configured) {
+    return { code: await initCommand(deps, []), asked: true };
+  }
+
+  return {
+    code: await acceptAll(deps, (facts, timers) => stepsFrontEnd(steps, facts, timers)),
+    asked: false,
+  };
 };
 
-const linkPinata = (deps: CliDeps, packageDir: string, checkout: boolean) =>
+const linkPinata = (deps: CliDeps, steps: Steps, packageDir: string, checkout: boolean) =>
   checkout
-    ? installPinataLink(deps, join(packageDir, "launcher", "bin", "pinata-dev.js"))
-    : removePinataLink(deps);
+    ? installPinataLink(deps, steps, join(packageDir, "launcher", "bin", "pinata-dev.js"))
+    : removePinataLink(deps, steps);
+
+export const UPDATED_FROM = "PINATA_UPDATED_FROM";
+
+const close = async (deps: CliDeps, steps: Steps, asked: boolean) => {
+  if (deps.env[UPDATED_FROM] !== undefined) {
+    return steps.close(`Pinata is up to date (${await launcherVersion()}).`);
+  }
+
+  if (!steps.changed() && !asked) {
+    return steps.close("Pinata is already installed. Nothing changed.");
+  }
+
+  steps.close("Pinata is installed.", [
+    ["Start", "open a new terminal, then cd <your repo> && pi"],
+    ["Settings", tilde(deps, pathsOf(deps).userConfigFile)],
+    ["Check", "pinata doctor"],
+  ]);
+};
+
+const announceUpdate = async (deps: CliDeps, steps: Steps) => {
+  const from = deps.env[UPDATED_FROM];
+  const version = await launcherVersion();
+
+  if (from !== undefined && from !== version) {
+    steps.done(`Updated pinata ${from} → ${version}`);
+  }
+};
 
 export const install = async (deps: CliDeps, packageDir: string, flags: InstallFlags) => {
   await requireHostPi(deps, "install");
 
   const config = flags.config === undefined ? undefined : await readConfig(deps, flags.config);
   const checkout = await isCheckout(deps, packageDir);
+  const steps = stepsOf(deps);
 
-  await preflight(deps);
+  await announceUpdate(deps, steps);
+
+  await preflight(deps, steps);
 
   await refuseBusy(deps);
 
@@ -80,23 +128,27 @@ export const install = async (deps: CliDeps, packageDir: string, flags: InstallF
     await inspectPinataLink(deps);
   }
 
-  await ensureExtensions(deps, checkout ? packageDir : `npm:${PACKAGE}@${await launcherVersion()}`);
+  await ensureExtensions(deps, steps, checkout ? packageDir : `npm:${PACKAGE}@${await launcherVersion()}`);
 
-  await installShim(deps, shim, join(packageDir, "launcher", "bin", checkout ? "pi-dev.js" : "pi.js"));
+  await installShim(deps, steps, shim, join(packageDir, "launcher", "bin", checkout ? "pi-dev.js" : "pi.js"));
 
-  await linkPinata(deps, packageDir, checkout);
+  await linkPinata(deps, steps, packageDir, checkout);
 
-  await setPathBlock(deps, true);
+  await setPathBlock(deps, steps, true);
 
   if (config !== undefined) {
     await writeFileAtomic(pathsOf(deps).userConfigFile, jsonText(config.value));
 
-    say(deps, `config: wrote ${pathsOf(deps).userConfigFile} from ${config.file}`);
+    steps.done(
+      `Copied the settings from ${tilde(deps, config.file)} (${tilde(deps, pathsOf(deps).userConfigFile)})`,
+    );
   }
 
-  const code = await setup(deps, flags);
+  const { code, asked } = await setup(deps, steps, flags);
 
-  say(deps, "next: open a new shell, cd into a repository in your workspace root and run pi");
+  if (code === 0) {
+    await close(deps, steps, asked);
+  }
 
   return code;
 };

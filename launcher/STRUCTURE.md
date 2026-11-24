@@ -31,6 +31,7 @@ bin/pinata-dev.js              checkout entry of pinata: runs the .ts sources, n
 cli/main.ts                    builds the real dependencies, the /dev/tty opener of pinata init included, and runs pinata or the pi link by the name it was started under
 cli/run.ts                     the pi link: intercept or launch, and the pinata: error rendering
 cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
+cli/steps.ts                   the output of install, update, uninstall and stop: one line per step, the pending line at a terminal, children run captured with their output shown on failure, the closing block
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, the proxy route and the install's services under the ground lock inside the preparation lock, the file cache watch while pi runs, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and the workspaceRoot required for the sandbox before the search and the host check (checkHostRoot) for --no-sandbox, config, discovery, the git dir check after it and the mounted root
@@ -57,7 +58,7 @@ cli/setup/detect.ts            the host, VM, sessions, free disk and folders gat
 cli/setup/screens.ts           every sentence of the setup screens, rich and plain, as functions of the facts and the plan, and one text per apply event
 cli/setup/flow.ts              runSetup: the intro, detection, the three first-run steps, the review hub with its section editors, cancel and the outros
 cli/setup/review.ts            the review summary: the rows of the three settings with their tags and problems, the file changes and the VM action, as lines for the hub and for --yes
-cli/setup/apply.ts             applyPlan: the file write and the VM step as typed events, and the two front ends: the wizard's (progress, failure screen with Try again, success screen) and the lines of --yes
+cli/setup/apply.ts             applyPlan: the file write and the VM step as typed events, and the three front ends: the wizard's (progress, failure screen with Try again, success screen), the lines of --yes and the step lines of pinata install
 cli/launches.ts                begin and finish a launch (registered under the folder's preparation lock, removing its container), the folder's sandbox removed after its last session under the preparation lock (waiting for it unless another session of the folder is registered), a failure after the registration ending the launch, and the orphan sweep
 cli/busy.ts                    busyLaunches, the live launches of this state dir, and vmSessions, the VM's busy count that adds the running agent containers of other installs and names them
 cli/ground.ts                  the ground lock with its waiting line, the install's services started under it, the idle teardown of services, relay, network and proxy and the idle proxy stop (both wait for the lock unless a launch of this state dir is registered)
@@ -76,11 +77,11 @@ cli/commands/status.ts         pinata status, with each configured service and i
 cli/commands/config.ts         pinata config, with the effective write-back keys of each file and their source
 cli/commands/egress.ts         pinata egress allow, revoke and list
 cli/commands/restart.ts        pinata restart: live-session refusal, the VM started (and stopped again when the y/N is declined or refused), the y/N for data the next pi cannot rebuild, then every folder released (a busy one stops it) and under the ground, agent, render and registry locks the ground, volumes, managed images and host records removed (the pi folder's records only with its volume), the VM restarted or kept running for a session, what stayed named with exit 1, and every line it prints in one table
-cli/commands/stop.ts           pinata stop: the orphan sweep, which stops the ground and the proxy when idle, then the VM when no session runs in it
-cli/commands/uninstall.ts      releaseSandbox for pinata uninstall: live-session refusal, each folder released, then under the ground and launch registry locks a second session count and the install's services, relay, network, proxy and volumes and the managed images, host-side release, with the lines it prints
+cli/commands/stop.ts           pinata stop: the orphan sweep, which stops the ground and the proxy when idle, then the VM when no session runs in it, as step lines
+cli/commands/uninstall.ts      releaseSandbox for pinata uninstall: live-session refusal, each folder released, then under the ground and launch registry locks a second session count and the install's services, relay, network, proxy and volumes and the managed images, host-side release, silent unless a folder's session started meanwhile
 cli/release.ts                 what the uninstall and pinata restart share: every known or engine-labelled folder released under its preparation lock when free, the install's volumes and managed images removed with the ones that stayed, and the ground and registry locks with the second session count and an optional hold between them
 cli/commands/list.ts           pinata list: the VM's state and size and, when it runs, every agent container in it with its folder, without starting it
-cli/commands/init.ts           pinata init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
+cli/commands/init.ts           pinata init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes, or the front end pinata install passes to acceptAll)
 cli/commands/doctor.ts         pinata doctor: stages, probes and host checks as checks by section, the vm size and file cache checks, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container, each credential rule named for its login or host; the credential sweep skips the config's own `env.set` values and names the secret-named ones; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
@@ -92,10 +93,10 @@ cli/commands/tls-probe.ts      the typed TLS handshake script those checks run a
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
 cli/pinata/run.ts              pinata: the one command table, install, update and uninstall and the sandbox commands, with their flags
-cli/pinata/host.ts             the package name, the host pi requirement (no pi stops install and update before they change anything), the preflight (root, Node, colima installed with brew when missing), the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
-cli/pinata/install.ts          pinata install: host pi requirement, --config check, pi install of the package, the link, the PATH blocks, the config file, then pinata init
-cli/pinata/update.ts           pinata update: checkout refusal, host pi requirement, preflight, npm install -g of the package, then the new copy's pinata install --yes
-cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox, the colima profile, the link, pi remove, the PATH blocks, the guarded state dir, npm uninstall -g, the kept lines; --sandbox skips the pinata link, pi remove, the PATH blocks and npm uninstall -g
+cli/pinata/host.ts             the package name, the host pi requirement (no pi stops install and update before they change anything), the preflight (root, Node, colima installed with brew when missing), host pi run captured, the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
+cli/pinata/install.ts          pinata install: host pi requirement, --config check, pi install of the package, the link, the PATH blocks, the config file, then pinata init, and the closing block (installed, nothing changed, or up to date after an update)
+cli/pinata/update.ts           pinata update: checkout refusal, host pi requirement, preflight, npm install -g of the package, then the new copy's pinata install --yes, told the old version
+cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox, the colima profile, the link, pi remove, the PATH blocks, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the PATH blocks and npm uninstall -g
 cli/pinata/shim.ts             ~/.local/bin/pi: what may be replaced, the link, the recorded managed link and its restore; ~/.local/bin/pinata of a checkout
 cli/pinata/path-block.ts       the marked PATH block in ~/.zshrc, ~/.bashrc and ~/.bash_profile, added or removed
 ```
@@ -486,8 +487,9 @@ tests/cli/prompt/text.test.ts        the path prompt
 tests/cli/prompt/plain.test.ts       the plain prompt set
 tests/cli/init.test.ts               pinata init: the no-terminal and CI refusals, /dev/tty, --yes with PINATA_ROOT and without a root, signals and exit codes
 tests/cli/uninstall.test.ts          releaseSandbox
+tests/cli/steps.test.ts              the step lines: off and at a terminal, NO_COLOR, the pending line, a failing child's output
 tests/cli/list.test.ts               pinata list
-tests/cli/pinata/support.ts          a pinata run over the CLI harness: npm prefix, package folder, host pi install and remove writing settings.json
+tests/cli/pinata/support.ts          a pinata run over the CLI harness: npm prefix, package folder, host pi install and remove writing settings.json, the captured colima delete and global npm
 tests/cli/pinata/install.test.ts     pinata install
 tests/cli/pinata/update.test.ts      pinata update
 tests/cli/pinata/uninstall.test.ts   pinata uninstall

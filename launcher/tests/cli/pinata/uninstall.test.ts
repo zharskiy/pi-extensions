@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, readlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmInspect } from "../../../backend/index.ts";
@@ -55,6 +55,7 @@ describe("pinata uninstall", () => {
       files: await read(),
     };
     const calls = pinata.lines().length;
+    const printed = pinata.harness.stdout().length;
 
     expect(await pinata.run("uninstall", "--sandbox")).toBe(0);
     expect(pinata.lines().slice(calls)).toEqual(["colima delete --profile pinata --force --data"]);
@@ -62,10 +63,19 @@ describe("pinata uninstall", () => {
     expect(await exists(pinata.harness.stateDir)).toBe(false);
     expect(await pinata.packages()).toEqual(installed.packages);
     expect(await read()).toEqual(installed.files);
-    expect(pinata.harness.stdout().trimEnd().split("\n").slice(-2)).toEqual([
-      `kept: pinata's extensions in host pi, the pinata command, the PATH block, ${pinata.harness.userConfigFile}, pi's sessions, pi and colima`,
-      "pi runs host pi again; pinata install brings the sandbox back",
-    ]);
+    expect(pinata.harness.stdout().slice(printed)).toBe(
+      [
+        "ok Removed the sandbox VM and its data",
+        "ok Removed pinata's pi link (~/.local/bin/pi)",
+        "ok Removed pinata's state",
+        "",
+        "The sandbox is uninstalled and pi runs on the host again. Kept on purpose:",
+        "  Extensions:  pinata's extensions stay loaded in pi",
+        `  Settings:    ${pinata.harness.userConfigFile}`,
+        "  Bring back:  pinata install",
+        "",
+      ].join("\n"),
+    );
 
     const rerun = pinata.lines().length;
 
@@ -79,6 +89,63 @@ describe("pinata uninstall", () => {
     expect(await readlink(pinata.shim)).toBe(installed.shim);
     expect(await pinata.packages()).toEqual(installed.packages);
     expect(await read()).toEqual(installed.files);
+  });
+
+  it("prints one line per step and lists what it kept", async () => {
+    const pinata = await installed(false);
+
+    expect(await pinata.run("uninstall")).toBe(0);
+    expect(pinata.harness.stdout()).toBe(
+      [
+        "ok Removed the sandbox VM and its data",
+        "ok Removed pinata's pi link (~/.local/bin/pi)",
+        "ok Removed pinata's extensions from pi",
+        "ok Removed the PATH block from ~/.zshrc",
+        "ok Removed pinata's state",
+        "",
+        "Pinata is uninstalled. Kept on purpose:",
+        `  Settings:     ${pinata.harness.userConfigFile}`,
+        "  pi sessions:  ~/.pi/agent/sessions",
+        "  pi, colima:   remove them yourself if you no longer need them",
+        "",
+      ].join("\n"),
+    );
+    expect(pinata.harness.stderr()).toBe("");
+  });
+
+  it("does not say pi runs on the host again when it cannot put pi's own link back", async () => {
+    const pinata = await createPinata({ vm: { inspect: async () => RUNNING } });
+    const managed = join(pinata.harness.hostAgentDir, "bin", "pi");
+
+    await mkdir(join(pinata.shim, ".."), { recursive: true });
+
+    await symlink(managed, pinata.shim);
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+
+    await rm(pinata.shim);
+
+    await writeFile(pinata.shim, "#!/bin/sh\necho mine\n");
+
+    await writeFile(stateLayout(pinata.harness.stateDir).salt, "salt");
+
+    const printed = pinata.harness.stdout().length;
+
+    expect(await pinata.run("uninstall", "--sandbox")).toBe(0);
+    expect(pinata.harness.stdout().slice(printed)).toBe(
+      [
+        "ok Removed the sandbox VM and its data",
+        `! Could not put pi's own link back, since ~/.local/bin/pi is taken; once it is free, run ln -s '${managed}' '${pinata.shim}'`,
+        "ok Removed pinata's state",
+        "",
+        "The sandbox is uninstalled. Kept on purpose:",
+        "  Extensions:  pinata's extensions stay loaded in pi",
+        `  Settings:    ${pinata.harness.userConfigFile}`,
+        "  Bring back:  pinata install",
+        "",
+      ].join("\n"),
+    );
+    expect(await readFile(pinata.shim, "utf8")).toBe("#!/bin/sh\necho mine\n");
   });
 
   it("leaves pi alone", async () => {

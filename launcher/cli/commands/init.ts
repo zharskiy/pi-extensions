@@ -10,7 +10,7 @@ import { type CliDeps, pathsOf, writeNotices } from "../deps.ts";
 import { createPlainPrompts } from "../prompt/plain.ts";
 import { createRichPrompts } from "../prompt/rich.ts";
 import { findTerminal, isSet, realTimers, withTerminal } from "../prompt/terminal.ts";
-import type { Ui } from "../prompt/types.ts";
+import type { Timers, Ui } from "../prompt/types.ts";
 import { applyPlan, lineFrontEnd } from "../setup/apply.ts";
 import { detectHost } from "../setup/detect.ts";
 import { readConfigText, readDocument, writeDocument } from "../setup/document.ts";
@@ -21,8 +21,10 @@ import { invalidText } from "../setup/screens.ts";
 import type {
   Answers,
   ApplyEffects,
+  ApplyFrontEnd,
   ConfigDocument,
   DocumentRead,
+  HostFacts,
   SetupIo,
   SharePlan,
 } from "../setup/types.ts";
@@ -140,7 +142,9 @@ const invalidConfig = (file: string, read: Extract<DocumentRead, { ok: false }>)
   return new LauncherError(`${file} ${problem}: ${read.message}`, fix);
 };
 
-const acceptAll = async (deps: CliDeps) => {
+type FrontOf = (facts: HostFacts, timers: Timers) => ApplyFrontEnd;
+
+export const acceptAll = async (deps: CliDeps, frontOf?: FrontOf) => {
   const context = contextOf(deps);
   const read = await readConfig(context.configFile);
 
@@ -166,11 +170,12 @@ const acceptAll = async (deps: CliDeps) => {
     assertVmFitsHost(deps, plan.vm.size);
   }
 
-  const streams = { out: deps.stdout, err: deps.stderr, timers: { ...realTimers, now: deps.now } };
+  const timers = { ...realTimers, now: deps.now };
   const state = { answers, touched: new Set<never>() };
   const review = createReview(document, facts, deps.env).lines(state, plan, { plain: true, table: true });
+  const streams = { out: deps.stdout, err: deps.stderr, timers };
 
-  const front = lineFrontEnd(streams, facts, review(Number.POSITIVE_INFINITY));
+  const front = frontOf?.(facts, timers) ?? lineFrontEnd(streams, facts, review(Number.POSITIVE_INFINITY));
 
   return applyPlan(front, effectsFor(deps, context), document, { plan, answers });
 };

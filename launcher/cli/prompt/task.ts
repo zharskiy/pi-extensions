@@ -2,7 +2,7 @@ import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
 import { elapsedOf } from "./style.ts";
 import { Cancelled, type Key, type TaskSpec, type Timers, type Ui } from "./types.ts";
 
-const HEARTBEAT_MS = 15_000;
+export const HEARTBEAT_MS = 15_000;
 
 export interface TaskView {
   update(text: string): void;

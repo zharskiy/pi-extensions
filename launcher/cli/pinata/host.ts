@@ -8,13 +8,13 @@ import {
   realOrResolved,
 } from "../../shared/index.ts";
 import { vmSessions } from "../busy.ts";
-import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "../deps.ts";
+import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
 import { missingPi, resolveJobPi } from "../host-pi.ts";
+import { intercept } from "../intercept.ts";
+import { ChildFailure, quietDeps, runQuietly, type Steps } from "../steps.ts";
 import { isOlderVersion, launcherVersion, PI_PACKAGE } from "../versions.ts";
 
 export const PACKAGE = "@zharskiy/pinata";
-
-export const say = (deps: CliDeps, line: string) => writeLine(deps.stdout, line);
 
 const output = async (deps: CliDeps, file: string, args: string[]) => {
   const result = await deps.runner.run(file, args, { cwd: deps.home }).catch(() => undefined);
@@ -22,18 +22,16 @@ const output = async (deps: CliDeps, file: string, args: string[]) => {
   return result?.code === 0 ? result.stdout.trim() : undefined;
 };
 
-export const interactive = async (
-  deps: CliDeps,
-  file: string,
-  args: string[],
-  env?: Record<string, string>,
-) => {
-  const code = await deps.runner.spawnInteractive(file, args, { cwd: deps.home, env });
+export const hostPiQuietly = async (deps: CliDeps, args: string[]) => {
+  const quiet = quietDeps(deps);
+  const code = await intercept(args, quiet.deps);
 
   if (code !== 0) {
-    throw new LauncherError(`${[file, ...args].join(" ")} exited with code ${code}`);
+    throw new ChildFailure(["pi", ...args], code ?? 1, quiet.output());
   }
 };
+
+const COLIMA = { pending: "Installing colima", done: "Installed colima", failed: "Could not install colima" };
 
 export const requireHostPi = async (deps: CliDeps, command: string) => {
   if ((await resolveJobPi(deps)) !== undefined) {
@@ -46,7 +44,7 @@ export const requireHostPi = async (deps: CliDeps, command: string) => {
   );
 };
 
-export const preflight = async (deps: CliDeps) => {
+export const preflight = async (deps: CliDeps, steps: Steps) => {
   if (process.getuid?.() === 0) {
     throw new LauncherError("run pinata as your own user, not as root or with sudo");
   }
@@ -58,7 +56,9 @@ export const preflight = async (deps: CliDeps) => {
   const found = await output(deps, "colima", ["version"]);
   const text =
     found ??
-    (await interactive(deps, "brew", ["install", "colima"]).then(() => output(deps, "colima", ["version"])));
+    (await steps
+      .task(COLIMA, () => runQuietly(deps, ["brew", "install", "colima"]))
+      .then(() => output(deps, "colima", ["version"])));
   const colima = /colima version v?([0-9.]+)/.exec(text ?? "")?.[1] ?? "unknown";
 
   if (colima === "unknown" || isOlderVersion(colima, "0.9.0")) {

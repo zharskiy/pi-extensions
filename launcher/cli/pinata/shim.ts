@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { locateManagedPi } from "../../hostpi/index.ts";
 import { LauncherError, lstatOrUndefined, realOrResolved } from "../../shared/index.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
-import { say } from "./host.ts";
+import { type Steps, tilde } from "../steps.ts";
 
 const linkPath = async (deps: CliDeps, name: string) =>
   join(await realOrResolved(join(deps.home, ".local", "bin")), name);
@@ -53,6 +53,7 @@ export const inspectShim = async (deps: CliDeps) => {
 
 export const installShim = async (
   deps: CliDeps,
+  steps: Steps,
   shim: { path: string; managed: boolean },
   target: string,
 ) => {
@@ -72,33 +73,39 @@ export const installShim = async (
 
   await symlink(target, shim.path);
 
-  say(deps, `pinata: linked ${shim.path} to ${target}`);
+  steps.done(`Linked pi to the sandbox (${tilde(deps, shim.path)})`);
 };
 
-export const removeShim = async (deps: CliDeps) => {
+export const removeShim = async (deps: CliDeps, steps: Steps) => {
   const path = await shimPath(deps);
   const recorded = (await readFile(recordOf(deps), "utf8").catch(() => "")).trim();
+  const ours = await isOurs(path);
 
-  if (await isOurs(path)) {
+  if (ours) {
     await rm(path);
-
-    say(deps, `pinata: removed ${path}`);
   }
 
   if (recorded === "" || (await readlink(path).catch(() => "")) === recorded) {
-    return;
+    if (ours) {
+      steps.done(`Removed pinata's pi link (${tilde(deps, path)})`);
+    }
+
+    return true;
   }
 
   if ((await lstatOrUndefined(path)) !== undefined) {
-    return say(
-      deps,
-      `pinata: put pi's managed link back with ln -s '${recorded}' '${path}' once that path is free`,
+    steps.warn(
+      `Could not put pi's own link back, since ${tilde(deps, path)} is taken; once it is free, run ln -s '${recorded}' '${path}'`,
     );
+
+    return false;
   }
 
   await symlink(recorded, path);
 
-  say(deps, `pinata: restored ${path} to ${recorded}`);
+  steps.done(`Restored pi's own link (${tilde(deps, path)})`);
+
+  return true;
 };
 
 export const inspectPinataLink = async (deps: CliDeps) => {
@@ -111,7 +118,7 @@ export const inspectPinataLink = async (deps: CliDeps) => {
   return path;
 };
 
-export const installPinataLink = async (deps: CliDeps, target: string) => {
+export const installPinataLink = async (deps: CliDeps, steps: Steps, target: string) => {
   const path = await inspectPinataLink(deps);
 
   if ((await readlink(path).catch(() => "")) === target) {
@@ -124,15 +131,15 @@ export const installPinataLink = async (deps: CliDeps, target: string) => {
 
   await symlink(target, path);
 
-  say(deps, `pinata: linked ${path} to ${target}`);
+  steps.done(`Linked pinata to this checkout (${tilde(deps, path)})`);
 };
 
-export const removePinataLink = async (deps: CliDeps) => {
+export const removePinataLink = async (deps: CliDeps, steps: Steps) => {
   const path = await linkPath(deps, "pinata");
 
   if (await isPinataLink(path)) {
     await rm(path);
 
-    say(deps, `pinata: removed ${path}`);
+    steps.done(`Removed the pinata command (${tilde(deps, path)})`);
   }
 };

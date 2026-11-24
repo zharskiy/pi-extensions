@@ -78,7 +78,7 @@ const FOLDS: Array<[string, string]> = [
 export const asciiOf = (text: string) =>
   FOLDS.reduce((folded, [unicode, ascii]) => folded.replaceAll(unicode, ascii), text);
 
-export type Tone = "cyan" | "yellow" | "red" | "dim";
+export type Tone = "cyan" | "green" | "yellow" | "red" | "dim";
 
 export type Paint = (tone: Tone, text: string) => string;
 

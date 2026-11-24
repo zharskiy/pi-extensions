@@ -43,9 +43,11 @@ Pinata never installs, updates or removes pi. Without a host pi, `pinata install
 4. With `--config <file>`, writes that file over `~/.pi/agent/pinata/config.json`, after checking it before anything else changes. It writes it on every install that passes it, with no merge: this is how a team hands out one config.
 5. Runs `pinata init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes`, `--config` or `CI`; otherwise it runs as `pinata init --yes`, and not at all when the config has a `workspaceRoot`, the VM exists and no `--config` was given.
 
-Run again, `pinata install` changes nothing. Open a new terminal afterwards.
+Each step that changes something prints one line, such as `✔ Installed colima` or `✔ Linked pi to the sandbox (~/.local/bin/pi)`, and a slow one shows `… Installing colima` at a terminal until it ends. The output of brew, npm, colima and pi appears only when one of them fails: the `✖` line names the step, the last 20 lines of the output follow, then the `pinata:` error. A closing block says how to start and where the settings are.
 
-To pick other versions, run `pinata update [<version>]`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@<version>` (`latest` without a version), then the new copy's `pinata install --yes`. A bare `pi update` moves an npm pi to the latest version. Pi in the sandbox follows the host pi.
+Run again, `pinata install` changes nothing and prints `Pinata is already installed. Nothing changed.` Open a new terminal afterwards.
+
+To pick other versions, run `pinata update [<version>]`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@<version>` (`latest` without a version), then the new copy's `pinata install --yes`, which prints `✔ Updated pinata <old> → <new>`, its own steps and `Pinata is up to date (<new>).` A bare `pi update` moves an npm pi to the latest version. Pi in the sandbox follows the host pi.
 
 To change the folder or the VM size later, run `pinata init` again. It plans the same VM shares as a launch, the folders of `mounts.binds` included.
 
@@ -92,7 +94,7 @@ Run again, `pinata init` opens the review with your current settings; a config w
 
 `PINATA_PLAIN=1` asks the same questions as numbered lines that you answer by typing, with no menu to move through, no spinner and no colour: for screen readers and plain terminals. A dumb or unset `TERM` gets plain mode too, read line by line without any cursor control (and so without Tab completion of paths).
 
-Without a terminal (CI, a provisioning script), `pinata init` refuses, and `pinata init --yes` asks nothing: it keeps the settings in the file and applies them to the VM, printing the same lines as the plain setup: the review of the settings, the file changes and the VM action first, then the progress and the result. `pinata install` uses `--yes` when it finds no terminal or `CI` is set. To name the project folder there, set `PINATA_ROOT`, which `--yes` writes to a config without `workspaceRoot`; with neither, `--yes` refuses and writes nothing:
+Without a terminal (CI, a provisioning script), `pinata init` refuses, and `pinata init --yes` asks nothing: it keeps the settings in the file and applies them to the VM, printing the same lines as the plain setup: the review of the settings, the file changes and the VM action first, then the progress and the result. `pinata install` prints no review: one line when it writes the settings and one when it creates or restarts the VM. `pinata install` uses `--yes` when it finds no terminal or `CI` is set. To name the project folder there, set `PINATA_ROOT`, which `--yes` writes to a config without `workspaceRoot`; with neither, `--yes` refuses and writes nothing:
 
 ```bash
 PINATA_ROOT="$HOME/Projects" pinata install
@@ -282,9 +284,9 @@ Start with `pinata doctor`, which names the failing check.
 
 Exit every pi session, then run `pinata uninstall`. It releases the sandbox, deletes the `pinata` Colima profile with its containers, volumes and images, removes the `pi` link (and puts pi's managed link back if the install replaced it), the `pinata` link of a checkout install, the package's source in pi, the `PATH` blocks, pinata's state (`~/.pi/agent/pinata/state`) and the npm package.
 
-Your repositories, `~/.pi` with its sessions, your config `~/.pi/agent/pinata/config.json` and pi stay; pinata never removes pi.
+Your repositories, `~/.pi` with its sessions, your config `~/.pi/agent/pinata/config.json` and pi stay; pinata never removes pi. It prints one line per part it removed, then what it kept on purpose.
 
-To run pi on the host again without removing pinata, run `pinata uninstall --sandbox`. It does the same, except that pinata's extensions stay in host pi, and the `PATH` block and the `pinata` command stay too. `pi` is then host pi, and `pinata install` brings the sandbox back. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it. `pinata list` shows this sandbox VM; `colima list` shows every Colima VM on the Mac.
+To run pi on the host again without removing pinata, run `pinata uninstall --sandbox`. It does the same, except that pinata's extensions stay in host pi, and the `PATH` block and the `pinata` command stay too. `pi` is then host pi, and `pinata install` brings the sandbox back. When something else took `~/.local/bin/pi` meanwhile, it leaves that file, does not say pi runs on the host again, and names the `ln -s` that puts pi's managed link back. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it. `pinata list` shows this sandbox VM; `colima list` shows every Colima VM on the Mac.
 
 ## More
 

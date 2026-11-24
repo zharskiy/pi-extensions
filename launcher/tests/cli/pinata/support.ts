@@ -8,7 +8,10 @@ import { createFakeBackend, createHarness, type HarnessOptions } from "../harnes
 const ANSWERS: Record<string, string> = {
   "brew --version": "Homebrew 4.4.0",
   "colima version": "colima version 0.10.3",
+  "colima delete --profile pinata --force --data": "",
 };
+
+const GLOBAL_NPM = /^npm (install|uninstall) -g /;
 
 interface PinataOptions extends HarnessOptions {
   global?: boolean;
@@ -46,9 +49,11 @@ export const createPinata = async (options: PinataOptions = {}) => {
         options.answer?.(call) ??
         (line === "npm prefix -g"
           ? { stdout: `${prefix}\n` }
-          : ANSWERS[line] === undefined
-            ? undefined
-            : { stdout: `${ANSWERS[line]}\n` })
+          : GLOBAL_NPM.test(line)
+            ? {}
+            : ANSWERS[line] === undefined
+              ? undefined
+              : { stdout: `${ANSWERS[line]}\n` })
       );
     },
   });

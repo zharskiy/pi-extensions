@@ -3,6 +3,8 @@ import { errorMessage, LauncherError } from "../../shared/index.ts";
 import { asciiOf, elapsedOf } from "../prompt/style.ts";
 import { heartbeat } from "../prompt/task.ts";
 import { Cancelled, type NotePlace, type Timers } from "../prompt/types.ts";
+import type { Steps } from "../steps.ts";
+import { tildeForm } from "./folders.ts";
 import { isPlanEmpty } from "./plan.ts";
 import {
   eventLines,
@@ -151,6 +153,62 @@ export const lineFrontEnd = (streams: LineStreams, facts: HostFacts, review: str
     review: () => printed(streams.out, review),
     report,
     task,
+    retry: async (failure, error) => {
+      if (!(error instanceof LauncherError)) {
+        throw error;
+      }
+
+      report(failure);
+
+      return false;
+    },
+  };
+};
+
+const QUIET_EVENTS = new Set<ApplyEvent["kind"]>(["nothing-to-do", "nothing-changed", "done"]);
+
+const textOf = (paragraph: Paragraph) => (typeof paragraph === "string" ? paragraph : paragraph.text);
+
+export const stepsFrontEnd = (steps: Steps, facts: HostFacts, timers: Timers): ApplyFrontEnd => {
+  const report = (event: ApplyEvent) => {
+    if (QUIET_EVENTS.has(event.kind)) {
+      return;
+    }
+
+    if (event.kind === "saved") {
+      steps.done(`Wrote the settings (${tildeForm(facts.configFile, facts.home)})`);
+
+      return;
+    }
+
+    if (event.kind === "vm-done" && event.applied === "created") {
+      steps.done(`Created the sandbox VM in ${event.elapsed}`);
+
+      return;
+    }
+
+    if (event.kind === "vm-done" && event.applied === "restarted") {
+      steps.done(`Restarted the sandbox VM in ${event.elapsed}`);
+
+      return;
+    }
+
+    const [first = "", ...rest] = eventLines(event, facts, true).map(textOf);
+
+    if (PROBLEMS.has(event.kind)) {
+      steps.failed(first.replace(/^✖ /, ""), rest.join("\n"));
+
+      return;
+    }
+
+    [first, ...rest].forEach(steps.note);
+  };
+
+  return {
+    now: timers.now,
+    review: () => undefined,
+    report,
+    task: (spec) => steps.task({ pending: "Preparing the sandbox VM" }, spec.run),
     retry: async (failure, error) => {
       if (!(error instanceof LauncherError)) {
         throw error;

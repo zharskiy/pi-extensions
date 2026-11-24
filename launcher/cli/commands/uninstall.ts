@@ -1,50 +1,23 @@
 import { type Backend, busyText } from "../../backend/index.ts";
-import { errorMessage, LauncherError } from "../../shared/index.ts";
+import { LauncherError } from "../../shared/index.ts";
 import { vmSessions } from "../busy.ts";
-import { type CliDeps, pathsOf, writeLines } from "../deps.ts";
+import { type CliDeps, pathsOf } from "../deps.ts";
 import { removeGround } from "../ground.ts";
-import { type RepoRelease, releaseRepos, removeStored, withInstallReleased } from "../release.ts";
-
-const startedMeanwhile = (repoHash: string) => [
-  `host: a pi session of ${repoHash.slice(0, 12)} started meanwhile; its sandbox stays`,
-];
-
-const repoLines = (repo: RepoRelease) => (repo.busy ? startedMeanwhile(repo.repoHash) : repo.removed);
-
-const releasedLines = async (deps: CliDeps, stateDir: string, backend: Backend | undefined) => {
-  const { released, known } = await releaseRepos(deps, stateDir, backend);
-
-  return [
-    ...released.flatMap(repoLines),
-    `host: released the created folders of ${known} ${known === 1 ? "folder" : "folders"}`,
-  ];
-};
-
-const storedLines = async (backend: Backend) => {
-  const stored = await removeStored(backend);
-
-  return [`engine: removed ${stored.volumes.length} volumes and ${stored.images.length} images`];
-};
+import { releaseRepos, removeStored, withInstallReleased } from "../release.ts";
 
 const reachableEngine = async (backend: Backend) =>
   (await backend.detect()).available ? backend : undefined;
 
-const releaseStored = (backend: Backend | undefined) =>
-  backend === undefined
-    ? Promise.resolve(["engine: the sandbox VM is not running, its objects go with the colima profile"])
-    : storedLines(backend).catch((error: unknown) => [
-        `engine: not cleaned (${errorMessage(error)}), its objects go with the colima profile`,
-      ]);
-
 const releaseInstall = (deps: CliDeps, stateDir: string, backend: Backend | undefined) =>
   withInstallReleased(deps, stateDir, async () => {
-    const ground = await removeGround(deps, stateDir, backend);
-    const stored = await releaseStored(backend);
+    await removeGround(deps, stateDir, backend);
 
-    return [...ground.map((line) => `install: ${line}`), ...stored];
+    if (backend !== undefined) {
+      await removeStored(backend).catch(() => undefined);
+    }
   });
 
-export const releaseSandbox = async (deps: CliDeps) => {
+export const releaseSandbox = async (deps: CliDeps, note: (line: string) => void) => {
   const { stateDir } = pathsOf(deps);
   const sessions = await vmSessions(deps.backend(), stateDir);
 
@@ -53,10 +26,15 @@ export const releaseSandbox = async (deps: CliDeps) => {
   }
 
   const backend = await reachableEngine(deps.backend());
-  const released = await releasedLines(deps, stateDir, backend);
-  const install = await releaseInstall(deps, stateDir, backend);
+  const { released } = await releaseRepos(deps, stateDir, backend);
 
-  writeLines(deps.stdout, released);
+  released
+    .filter((repo) => repo.busy)
+    .forEach((repo) => {
+      note(`A pi session of ${repo.repoHash.slice(0, 12)} started meanwhile; its sandbox stays`);
+    });
+
+  const install = await releaseInstall(deps, stateDir, backend);
 
   if ("busy" in install) {
     throw new LauncherError(
@@ -64,6 +42,4 @@ export const releaseSandbox = async (deps: CliDeps) => {
       "exit it, then uninstall again",
     );
   }
-
-  writeLines(deps.stdout, install.released);
 };

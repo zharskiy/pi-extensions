@@ -335,9 +335,13 @@ describe("pinata stop", () => {
     expect(context.events).toEqual(["proxy stop", STATUS, STOP]);
     expect(existsSync(proxyFiles.token)).toBe(false);
     expect(context.harness.stdout()).toBe(
-      ["stopped the proxy", "stopped the sandbox VM (profile pinata); the next pi starts it again", ""].join(
-        "\n",
-      ),
+      [
+        "ok Cleaned up after ended pi sessions",
+        "ok Stopped the sandbox VM",
+        "",
+        "The next pi starts it again.",
+        "",
+      ].join("\n"),
     );
   });
 
@@ -391,7 +395,7 @@ describe("pinata stop", () => {
     const context = await setupWith();
 
     expect(await runPinata(["stop"], context.harness.deps)).toBe(0);
-    expect(context.harness.stdout()).toBe("the sandbox VM is already stopped\n");
+    expect(context.harness.stdout()).toBe("The sandbox VM is already stopped.\n");
     expect(context.events).toEqual(["proxy stop", STATUS]);
   });
 
@@ -399,7 +403,7 @@ describe("pinata stop", () => {
     const context = await setupWith({ profile: false });
 
     expect(await runPinata(["stop"], context.harness.deps)).toBe(0);
-    expect(context.harness.stdout()).toBe("no sandbox VM: the colima profile pinata does not exist\n");
+    expect(context.harness.stdout()).toBe("There is no sandbox VM to stop.\n");
     expect(context.events).toEqual(["proxy stop"]);
   });
 

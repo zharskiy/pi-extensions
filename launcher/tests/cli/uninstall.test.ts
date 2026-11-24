@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LABELS, networkName } from "../../backend/index.ts";
 import { releaseSandbox } from "../../cli/commands/uninstall.ts";
 import { sha256Hex, stateLayout } from "../../shared/index.ts";
-import { FAKE_NETWORK, FAKE_RELAY } from "../support/fake-backend.ts";
+import { FAKE_NETWORK } from "../support/fake-backend.ts";
 import { exists, tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
 
@@ -21,7 +21,11 @@ describe("releaseSandbox", () => {
 
     await holdLaunch(harness);
 
-    await expect(releaseSandbox(harness.deps)).rejects.toThrow("1 pi session is running in the sandbox VM");
+    const notes: string[] = [];
+
+    await expect(releaseSandbox(harness.deps, (line) => notes.push(line))).rejects.toThrow(
+      "1 pi session is running in the sandbox VM",
+    );
     expect(fake.containers.has(id)).toBe(true);
   });
 
@@ -58,7 +62,7 @@ describe("releaseSandbox", () => {
 
     await harness.writeJson(stateLayout(harness.stateDir).repo(repo).record, { root: harness.repoRoot });
 
-    await releaseSandbox(harness.deps);
+    await releaseSandbox(harness.deps, () => undefined);
     expect(fake.containers.has(managed)).toBe(false);
     expect(fake.containers.has(foreign)).toBe(true);
     expect(fake.containers.has(othersContainer)).toBe(true);
@@ -69,8 +73,7 @@ describe("releaseSandbox", () => {
     expect(fake.volumes.has("pinata-agent-other")).toBe(true);
     expect(fake.imageRemovals).toContain(built.id);
     expect(harness.proxyStops()).toBe(1);
-    expect(harness.stdout()).toContain(`install: removed relay ${FAKE_RELAY}\n`);
-    expect(harness.stdout()).toContain("host: released the created folders of 1 folder\n");
+    expect(harness.stdout()).toBe("");
   });
 
   it("keeps the sandbox, the ground and the stored objects when a pi session starts while the uninstall runs", async () => {
@@ -103,7 +106,9 @@ describe("releaseSandbox", () => {
 
     await fake.backend.ensureVolume("pinata-agent-a", { [LABELS.repoHash]: repo });
 
-    await expect(releaseSandbox(harness.deps)).rejects.toThrow(
+    const notes: string[] = [];
+
+    await expect(releaseSandbox(harness.deps, (line) => notes.push(line))).rejects.toThrow(
       "the sandbox network, proxy, services, volumes and images were kept",
     );
     expect(fake.containers.has(starting)).toBe(true);
@@ -111,9 +116,7 @@ describe("releaseSandbox", () => {
     expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
     expect(fake.volumes.has("pinata-agent-a")).toBe(true);
     expect(harness.proxyStops()).toBe(0);
-    expect(harness.stdout()).toContain(
-      `host: a pi session of ${repo.slice(0, 12)} started meanwhile; its sandbox stays\n`,
-    );
+    expect(notes).toEqual([`A pi session of ${repo.slice(0, 12)} started meanwhile; its sandbox stays`]);
   });
 
   it("holds a pi session that registers during the removal of the install objects until the removal ends", async () => {
@@ -139,7 +142,7 @@ describe("releaseSandbox", () => {
 
     await fake.backend.ensureVolume("pinata-cache-a");
 
-    await releaseSandbox(harness.deps);
+    await releaseSandbox(harness.deps, () => undefined);
 
     await registering.done;
 
@@ -156,12 +159,10 @@ describe("releaseSandbox", () => {
 
     await harness.writeJson(stateLayout(harness.stateDir).repo(repo).created, [mountPoint]);
 
-    await releaseSandbox(harness.deps);
+    await releaseSandbox(harness.deps, () => undefined);
     expect(await exists(mountPoint)).toBe(false);
     expect(harness.proxyStops()).toBe(1);
-    expect(harness.stdout()).toContain(
-      "engine: the sandbox VM is not running, its objects go with the colima profile\n",
-    );
+    expect(harness.stdout()).toBe("");
   });
 
   it("stops the proxy when listing the engine's containers fails", async () => {
@@ -173,7 +174,9 @@ describe("releaseSandbox", () => {
       }),
     });
 
-    await expect(releaseSandbox(harness.deps)).rejects.toThrow("engine broke");
+    const notes: string[] = [];
+
+    await expect(releaseSandbox(harness.deps, (line) => notes.push(line))).rejects.toThrow("engine broke");
     expect(harness.proxyStops()).toBe(1);
   });
 });

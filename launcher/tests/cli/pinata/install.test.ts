@@ -1,6 +1,7 @@
 import { lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { VmInspect } from "../../../backend/index.ts";
 import { launcherVersion } from "../../../cli/versions.ts";
 import { exists } from "../../support/temp-dir.ts";
 import { createPinata } from "./support.ts";
@@ -9,7 +10,65 @@ const BLOCK = (home: string) => `# pinata begin\nexport PATH='${home}/.local/bin
 
 const BROKEN = ["# pinata begin\n", `${"# pinata begin\nx\n# pinata end\n".repeat(2)}`];
 
+const RUNNING: VmInspect = { state: "running", size: { cpus: 4, memoryGiB: 8, diskGiB: 60 }, shares: [] };
+
 describe("pinata install", () => {
+  it("prints one line per step and a closing block, and a rerun says only that nothing changed", async () => {
+    const pinata = await createPinata({ vm: { inspect: async () => RUNNING } });
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+
+    const printed = pinata.harness.stdout().length;
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(pinata.harness.stdout()).toBe(
+      [
+        "ok Registered pinata's extensions with pi",
+        "ok Linked pi to the sandbox (~/.local/bin/pi)",
+        "ok Linked pinata to this checkout (~/.local/bin/pinata)",
+        "ok Added ~/.local/bin to PATH in ~/.zshrc",
+        "",
+        "Pinata is installed.",
+        "  Start:     open a new terminal, then cd <your repo> && pi",
+        `  Settings:  ${pinata.harness.userConfigFile}`,
+        "  Check:     pinata doctor",
+        "Pinata is already installed. Nothing changed.",
+        "",
+      ].join("\n"),
+    );
+    expect(pinata.harness.stdout().slice(printed)).toBe("Pinata is already installed. Nothing changed.\n");
+    expect(pinata.harness.stderr()).toBe("");
+  });
+
+  it("installs colima quietly, and shows brew's output when it fails", async () => {
+    const pinata = await createPinata({
+      answer: (call) =>
+        call.file === "colima"
+          ? { code: 127 }
+          : call.file === "brew" && call.args[0] === "install"
+            ? {
+                code: 1,
+                stdout: `${Array.from({ length: 30 }, (_, line) => `line ${line}`).join("\n")}\n`,
+                stderr: "Error: no network\n",
+              }
+            : undefined,
+    });
+
+    expect(await pinata.run("install", "--yes")).toBe(1);
+    expect(pinata.harness.calls.filter((call) => call.interactive)).toEqual([]);
+    expect(pinata.harness.stdout()).toBe("");
+    expect(pinata.harness.stderr()).toBe(
+      [
+        "x Could not install colima",
+        ...Array.from({ length: 19 }, (_, line) => `  line ${line + 11}`),
+        "  Error: no network",
+        "pinata: brew install colima exited with code 1",
+        "",
+      ].join("\n"),
+    );
+    expect(await exists(pinata.shim)).toBe(false);
+  });
+
   it.each([
     [false, "pi-dev.js", "alias ll=\xff\n"],
     [true, "pi.js", "alias ll=\xff"],
@@ -100,7 +159,7 @@ describe("pinata install", () => {
     expect(await pinata.run("install", "--yes")).toBe(0);
     expect(await readFile(zshrc, "utf8")).toBe(text);
     expect(pinata.harness.stdout()).toContain(
-      `shell: ${zshrc} has a "# pinata begin" or "# pinata end" line`,
+      '! Left ~/.zshrc as it is: it has a "# pinata begin" or "# pinata end" line without its pair\n',
     );
   });
 
@@ -152,7 +211,7 @@ describe("pinata install", () => {
 
     expect(await pinata.run("install", "--yes")).toBe(0);
     expect(await readlink(link)).toBe(target);
-    expect(pinata.harness.stdout()).toContain(`pinata: linked ${link} to ${target}`);
+    expect(pinata.harness.stdout()).toContain("ok Linked pinata to this checkout (~/.local/bin/pinata)\n");
 
     await writeFile(join(pinata.harness.stateDir, "salt"), "salt");
 
