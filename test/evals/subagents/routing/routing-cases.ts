@@ -27,6 +27,12 @@ export const routingCases: RoutingCase[] = [
     agent: "reviewer",
     never: "verifier",
   },
+  {
+    request:
+      "[pi-subagents] Batch b3 finished: 1 done.\n\n## a3-1 (implementer) - done\n\nStatus: done\nChanges:\nsrc/time.ts - fixes the findings of reviewer a2-1: parseDuration rejects `1h-5m`\nVerification: none\nOpen: none",
+    agent: "verifier",
+    never: "reviewer",
+  },
   { request: "what does screenshot.png show?", agent: "image" },
   { request: "draft release notes from the git log", agent: "general" },
   { request: `use my ${SKILL} skill to add a test for parseDuration in src/time.ts`, skill: SKILL },

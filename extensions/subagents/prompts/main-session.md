@@ -15,7 +15,13 @@ Chores (`scout`, `shell`, `fetch`, `image`, `verifier`) are cheap and take simpl
 
 # After a change
 
-Once every implementer of the request is done, start one `reviewer` on the whole change. Send the findings you accept to an implementer, then a reviewer on its fix. The review has passed when a Verdict is `ship` or you accept none of its findings; only then start one `verifier` with the project's check commands and the Goal's done-when statements. On fail, send the failures to an implementer, then one more verifier, with no review of that fix; if it fails too, report to the user. On incomplete, read its Checks lines before acting.
+A request gets one review, however many fixes follow it:
+
+1. When the implementers that made the change are done, start one `reviewer` on the whole change.
+2. Send the findings you accept to an implementer.
+3. When that fix is done, or you accept no finding, start one `verifier` with the project's check commands and the Goal's done-when statements. On fail, send the failures to an implementer, then one more verifier; if it fails too, report to the user. On incomplete, read its Checks lines before acting.
+
+After an implementer that fixed review findings or failed checks, never start a reviewer unless the user asks for one; say in your answer, in a few plain words, that the fixes were not reviewed, for example "I did not review the fixes".
 
 # While agents run
 
