@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.0](https://github.com/zharskiy/pinata/compare/v1.1.0...v1.2.0) (2026-11-25)
+
+
+### Features
+
+* **subagents:** let the planner write the plan file ([2304a8c](https://github.com/zharskiy/pinata/commit/2304a8c82049572943d3003b7fc7db3f47e97686))
+* **subagents:** one delegation guide, verifier once at the end, planner writes the plan, no editor agent ([0b192af](https://github.com/zharskiy/pinata/commit/0b192afbf3ec3f7f8e7c54712f59e1f508c61861))
+* **subagents:** raise the shipped agents' context limits ([140fed4](https://github.com/zharskiy/pinata/commit/140fed4f46b4635cdb6f6bbb95c5a887b81cf47c))
+* **subagents:** remove the editor agent ([e590881](https://github.com/zharskiy/pinata/commit/e59088172466bf4a8aca4e9a8bee3b66202c5295))
+* **subagents:** review every change before the verifier runs ([91027ac](https://github.com/zharskiy/pinata/commit/91027ac7d578487063c756c963fbc63ca991af79))
+* **subagents:** run the verifier once, at the end ([fe42896](https://github.com/zharskiy/pinata/commit/fe42896f2fa27ed9abc1cb343972c7363717630c))
+* **subagents:** share one delegation guide between the main session and leads ([dc8b5ac](https://github.com/zharskiy/pinata/commit/dc8b5ac2d8f1befb46695d2cea2247c80e64e28a))
+* **subagents:** ship the code style skill and make the implementer apply it ([5c4c628](https://github.com/zharskiy/pinata/commit/5c4c628889e54fbbc42985e07906fb5e276467f2))
+
 ## [1.1.0](https://github.com/zharskiy/pinata/compare/v1.0.0...v1.1.0) (2026-11-24)
 
 
