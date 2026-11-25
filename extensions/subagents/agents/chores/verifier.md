@@ -1,6 +1,6 @@
 ---
 name: verifier
-description: Use once, after every change and any review are done, to check them against given commands and done-when statements. Changes nothing. Not for fixing, design review or open questions. Returns a pass, fail or incomplete verdict with one line per check and evidence for each failure.
+description: Use once, when every change is done and its review has passed, to check them against given commands and done-when statements. Changes nothing. Not for fixing, design review or open questions. Returns a pass, fail or incomplete verdict with one line per check and evidence for each failure.
 model: openai/gpt-6-luna:low
 limit: 80000
 tools: [read, grep, find, ls, bash]
