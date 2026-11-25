@@ -464,10 +464,30 @@ describe("run_agent batches", () => {
     ]);
   });
 
-  it("puts the delegation guide in the main session's description", () => {
+  it("puts the delegation guide, with the static rules and the result states, in the main session's description", () => {
     const { host } = setup();
+    const text = host.tool<RunAgentParams, RunAgentDetails>("run_agent").description;
 
-    expect(host.tool<RunAgentParams, RunAgentDetails>("run_agent").description).toContain("How to delegate:");
+    expect(text).toContain("How to delegate:");
+    expect(text).toContain(
+      '- Choosing: pick the agent whose description fits the work, never because a model was named. "Review X with model M" is the reviewing agent with a model override.',
+    );
+    expect(text).toContain("never choose or change a model yourself");
+    expect(text).toContain(
+      "If the only matches lack credentials, tell the user (they can log in with `/login`) and ask whether to run the agent on its own model; never drop a requested model silently.",
+    );
+    expect(text).toContain("The harness resolves a requested model, tolerating misspellings");
+    expect(text).not.toContain("- Skills:");
+    expect(text).toContain("`Status: partial`: its Open line says what is left;");
+    expect(text).toContain("`Status: blocked`: it changed nothing.");
+    expect(text).toContain(
+      "- failed or stopped: the reason, plus the agent's last output, when it had any, under an `(unverified partial output: <reason>)` note; that output is not a result.",
+    );
+    expect(text).toContain("- handoff: `Handoff file: <path>`");
+    expect(text).toContain("A `Chain: <id> → <id> (N sessions)` line");
+    expect(text).not.toContain("- Tasks:");
+    expect(text).not.toContain("Read the file either way");
+    expect(text).not.toContain("To continue");
   });
 
   it("declares skills as a string list on each item of the schema", () => {
@@ -483,7 +503,12 @@ describe("run_agent batches", () => {
       type: "array",
       items: { type: "string" },
       description:
-        "Skill names to add for this agent: skills you have whose descriptions fit the task, plus any the user named. None for chores. A skill you do not have starts nothing; the error lists yours.",
+        "Skill names to add to the agent's own for this task: skills you have (in the main session, the skills loaded into it) whose descriptions fit the task, plus any the user named. None for chores (scout, fetch, shell, image, verifier). A skill you do not have starts nothing; the error lists yours.",
+    });
+    expect(item.properties.model).toEqual({
+      type: "string",
+      description:
+        "Only when the user (or, for an agent, its task) explicitly named a model or thinking level for this task: their words unchanged as `name[:thinking]`, for example `provider/id`, a short model name, `name:high`, or `:low` to change only the thinking level. Omit to use the agent's own model.",
     });
     expect(item.additionalProperties).toBe(false);
   });

@@ -16,7 +16,7 @@ extensions/subagents/
 ├── prompts/
 │   ├── main-session.md                    # the main session's prompt section
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
-│   ├── delegating.md                      # how to delegate: the guide describeRunAgent puts into every run_agent description
+│   ├── delegating.md                      # how to delegate and read results: the static rules describeRunAgent ends every run_agent description with
 │   ├── base-system-prompt.md              # shared agent rules and the result contract (a handoff replaces it: no reply)
 │   ├── create-agent.md                    # the /agents create brief
 │   └── autosetup-skills.md                # the /agents setup skills brief

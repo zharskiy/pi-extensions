@@ -23,7 +23,7 @@ const general = {
 };
 
 describe("run_agent description", () => {
-  it("lists the allowed agents with their models and limits, the rules and the result contract", () => {
+  it("lists the allowed agents with their models and limits, then the limits and the guide", () => {
     const text = describeRunAgent(agents, { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 }, GUIDE);
 
     expect(text).toContain(
@@ -31,12 +31,8 @@ describe("run_agent description", () => {
     );
     expect(text).toContain("agents you start run at depth 2 of at most 3. They may start only the subagents");
     expect(text).toContain("at most 4 agents run at the same time");
-    expect(text).toContain(
-      "Set `model` only when the user (or, for an agent, its task) explicitly names a model",
-    );
-    expect(text).toContain("never choose or change a model yourself");
-    expect(text).toContain("`Status: blocked`");
-    expect(text).toContain("handoff: `Handoff file: <path>`");
+    expect(text).not.toContain("Rules:");
+    expect(text).not.toContain("Result contract");
   });
 
   it("lists every agent the same way, by name, with what it may start", () => {
@@ -50,9 +46,6 @@ describe("run_agent description", () => {
       "Agents you may start:\n\n- explorer: Searches the repo. (model of the main session, context limit 100000 tokens)\n- general: Use only when no other agent fits the work. (model beta/nova-6.1-sol, context limit 100000 tokens, may start explorer, reviewer)\n- reviewer: ",
     );
     expect(text).not.toContain("allback");
-    expect(text).toContain(
-      '- Choosing: pick the agent whose description fits the work, never because a model was named. "Review X with model M" is the reviewing agent with a model override.',
-    );
   });
 
   it("says any other agent for subagents: all and lists no MCP tools", () => {
@@ -87,30 +80,11 @@ describe("run_agent description", () => {
     expect(text).toContain("- none: no agents are available to you; do not call this tool.");
   });
 
-  it("states the skills rule, the credentials case and the Status lines of a result, without the old Tasks rule", () => {
+  it("ends with the delegation guide, after the limits", () => {
     const text = describeRunAgent(agents, { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 }, GUIDE);
 
-    expect(text).toContain(
-      "- Skills: `skills` adds skills, by name, to the agent's own for this task. Pass skills you have yourself (in the main session, the skills loaded into it) whose descriptions fit the task, plus any skill the user named; chores (scout, fetch, shell, image, verifier) take none. A skill you do not have starts nothing, and the error lists yours. An agent with `skills: all` gets every skill you have.",
-    );
-    expect(text).toContain(
-      "Pass the words unchanged as `name[:thinking]` (a name, a name with `:high`, or `:low` alone).",
-    );
-    expect(text).toContain(
-      "If the only matches lack credentials, tell the user (they can log in with `/login`) and ask whether to run the agent on its own model; never drop a requested model silently.",
-    );
-    expect(text).toContain(
-      "It starts with `Status: done`, `Status: partial` (its Open line says what is left) or `Status: blocked` (it changed nothing; either the task was ambiguous and it lists the questions, or a `Wrong agent:` line says the task belongs to another agent), and ends with `Verification:` and `Open:` lines.",
-    );
-    expect(text).not.toContain("- Tasks:");
-    expect(text).not.toContain("Read the file either way");
-    expect(text).not.toContain("To continue");
-  });
-
-  it("puts the delegation guide between the rules and the result contract", () => {
-    const text = describeRunAgent(agents, { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 }, GUIDE);
-
-    expect(text).toContain(`end as handoff.\n\n${GUIDE}\n\nResult contract:`);
+    expect(text).toContain("context limit 80000 tokens)\n\nLimits:\n- Depth:");
+    expect(text.endsWith(`extra agents wait in a queue.\n\n${GUIDE}`)).toBe(true);
     expect(text).not.toContain("- Batches:");
   });
 
