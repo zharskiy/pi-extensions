@@ -2,7 +2,7 @@
 name: general
 description: Use only when no other agent fits, such as a task that mixes searching, scripting and small edits, reproducing a problem, or drafting a document. Not for pure search, web pages, running a command set, scoped code changes or reviews. Returns the steps taken and their outcome.
 model: openai/gpt-6.2-sol:medium
-limit: 100000
+limit: 150000
 tools: all
 skills: all
 subagents: [scout, editor, fetch, shell, image, verifier, planner, implementer, reviewer]

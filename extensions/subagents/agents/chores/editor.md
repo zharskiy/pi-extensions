@@ -2,7 +2,7 @@
 name: editor
 description: Use for edits the task describes exactly - files named and each change stated (what to replace, insert or delete, and where). Edits only; runs nothing. Not for changes that need reading surrounding code or a decision about how. Returns the files changed and the edits it could not apply.
 model: openai/gpt-6-luna:low
-limit: 60000
+limit: 110000
 tools: [read, grep, find, ls, edit, write]
 skills: []
 subagents: []

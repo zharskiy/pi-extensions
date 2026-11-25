@@ -69,7 +69,7 @@ const reviewOnce = async (entry: ReviewerCase, index: number): Promise<Outcome> 
   const label = `review ${entry.sha} run ${index + 1}`;
   const live = createLiveHarness(label, {
     agents: {
-      reviewer: { from: "reviewer", fields: { limit: "80000" } },
+      reviewer: { from: "reviewer", fields: { limit: "150000" } },
       scout: { from: "scout" },
       shell: { from: "shell" },
     },

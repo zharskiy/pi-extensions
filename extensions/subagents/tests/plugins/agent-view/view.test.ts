@@ -1054,18 +1054,18 @@ describe("agent view with live agents", () => {
     const { view } = await harness.openView(record.id);
     const notice = () => plainLines(view.render(100)).at(-3);
 
-    harness.runtime.child(record.id).turn({ tokens: 50_000, window: 200_000, percent: 25 });
+    harness.runtime.child(record.id).turn({ tokens: 50_000, window: 400_000, percent: 12.5 });
     await flushMicrotasks();
     vi.advanceTimersByTime(350);
 
     expect(notice()).toBe("");
 
-    harness.runtime.child(record.id).turn({ tokens: 85_000, window: 200_000, percent: 42 });
+    harness.runtime.child(record.id).turn({ tokens: 130_000, window: 400_000, percent: 32.5 });
     await flushMicrotasks();
     vi.advanceTimersByTime(350);
 
-    expect(plainLines(view.render(100))[2]).toMatch(/ · working context 85\.0k of 100k$/);
-    expect(notice()).toBe(" » handoff at 100k tokens · 85.0k used");
+    expect(plainLines(view.render(100))[2]).toMatch(/ · working context 130\.0k of 150k$/);
+    expect(notice()).toBe(" » handoff at 150k tokens · 130.0k used");
   });
 });
 

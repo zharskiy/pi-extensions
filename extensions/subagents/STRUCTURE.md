@@ -10,7 +10,7 @@ extensions/subagents/
 ├── README.md                              # user documentation
 ├── ARCHITECTURE.md                        # runtime behaviour
 ├── STRUCTURE.md                           # this file
-├── agents/                                # shipped agent definitions
+├── agents/                                # shipped agent definitions (every `limit:` is at most 150000)
 │   ├── leads/                             # planner.md, implementer.md, reviewer.md, general.md (leads: they may start subagents; reviewer, planner and general share a model, implementer has its own)
 │   └── chores/                            # scout.md, editor.md, fetch.md, shell.md, image.md, verifier.md (chores: subagents none)
 ├── prompts/

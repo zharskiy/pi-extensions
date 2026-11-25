@@ -97,7 +97,7 @@ const implementOnce = async (entry: ImplementerCase, index: number): Promise<Out
   const label = `implement ${entry.sha} run ${index + 1}`;
   const live = createLiveHarness(label, {
     agents: {
-      implementer: { from: "implementer", fields: { limit: "120000" } },
+      implementer: { from: "implementer", fields: { limit: "150000" } },
       scout: { from: "scout" },
       shell: { from: "shell" },
       verifier: { from: "verifier" },

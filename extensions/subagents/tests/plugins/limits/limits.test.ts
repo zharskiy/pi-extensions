@@ -8,7 +8,7 @@ import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { createHarness, writeUserAgent } from "../../support/subagents-harness.ts";
+import { agentFile, createHarness, writeUserAgent } from "../../support/subagents-harness.ts";
 
 const WIDE_AGENT = [
   "---",
@@ -25,12 +25,15 @@ const WIDE_AGENT = [
 const setup = async (overrides = {}, agent = "scout") => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin], {
     overrides,
-  });
+    beforeStart: ({ host }) => {
+      writeUserAgent(host, "scout", agentFile("scout", { limit: "100000" }));
+      writeUserAgent(host, "general", agentFile("general", { limit: "100000", subagents: "[scout]" }));
 
-  if (agent === "wide") {
-    writeUserAgent(harness.host, "wide", WIDE_AGENT);
-    harness.host.start();
-  }
+      if (agent === "wide") {
+        writeUserAgent(host, "wide", WIDE_AGENT);
+      }
+    },
+  });
 
   await harness.host
     .tool<RunAgentParams, unknown>("run_agent")
