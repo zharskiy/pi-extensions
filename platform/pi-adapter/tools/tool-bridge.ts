@@ -53,6 +53,7 @@ const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],
   details: result.details,
   ...(result.isError ? { isError: true } : {}),
+  ...(result.terminate ? { terminate: true } : {}),
 });
 
 export const fromPiResult = (result: {

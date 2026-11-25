@@ -33,7 +33,7 @@ import { createPiHost } from "../runtime/host.ts";
 import { finalRunTexts } from "../runtime/message-text.ts";
 import { ASSISTANT_DELTA_TYPES } from "../runtime/phase.ts";
 import { promptRecordEntry } from "../runtime/session-file.ts";
-import type { PiToolRenderContext } from "../tools/tool-bridge.ts";
+import { type PiToolRenderContext, toPiTool } from "../tools/tool-bridge.ts";
 import { piShipped } from "../tools/tool-rows.ts";
 import { BUILTIN_TOOLS } from "../tools/tool-source.ts";
 import { capturePiRenderers } from "../tools/transcript.ts";
@@ -591,7 +591,10 @@ describe("pi adapter conformance", () => {
       vi.unstubAllEnvs();
     });
 
-    const fauxSession = async (responses: ReturnType<typeof fauxAssistantMessage>[]) => {
+    const fauxSession = async (
+      responses: ReturnType<typeof fauxAssistantMessage>[],
+      customTools: pi.ToolDefinition[] = [],
+    ) => {
       const dir = temp.make("pi-custom-faux-");
 
       vi.stubEnv("PI_CODING_AGENT_DIR", dir);
@@ -615,10 +618,55 @@ describe("pi adapter conformance", () => {
         }),
         settingsManager: pi.SettingsManager.inMemory({}),
         sessionManager: pi.SessionManager.inMemory(dir),
+        customTools,
       });
 
       return session;
     };
+
+    it("ends a run on a terminating tool result without another model call, and a triggerTurn custom message starts the next", async () => {
+      const start = toPiTool({
+        name: "start_batch",
+        label: "Start batch",
+        description: "start",
+        parameters: { type: "object", properties: {} },
+        execute: async () => ({ text: "started", terminate: true }),
+      });
+      const session = await fauxSession(
+        [
+          fauxAssistantMessage([fauxText("early"), fauxToolCall("start_batch", {})], {
+            stopReason: "toolUse",
+          }),
+          fauxAssistantMessage(fauxText("woken")),
+        ],
+        [start],
+      );
+
+      const roles = () =>
+        session.sessionManager
+          .getEntries()
+          .flatMap((entry) =>
+            entry.type === "message"
+              ? [entry.message.role]
+              : entry.type === "custom_message"
+                ? ["custom"]
+                : [],
+          )
+          .filter((role) => role !== "system");
+
+      await session.prompt("go");
+
+      expect(roles()).toEqual(["user", "assistant", "toolResult"]);
+
+      await session.sendCustomMessage(
+        { customType: "wake", content: "done", display: false },
+        { triggerTurn: true },
+      );
+
+      expect(roles()).toEqual(["user", "assistant", "toolResult", "custom", "assistant"]);
+
+      session.dispose();
+    });
 
     it("emits message_start with the type and the string content of a custom message steered into a streaming turn", async () => {
       const session = await fauxSession([

@@ -131,6 +131,7 @@ export const createPiRuntime = (
     const listeners = new Set<(event: ChildEvent) => void>();
     let running = false;
     let disposed = false;
+    let runStart = 0;
     const customsInPiQueue: PiCustom[] = [];
 
     const report = (step: string, error: unknown) => {
@@ -323,11 +324,13 @@ export const createPiRuntime = (
 
     const prompt = (text: string) => {
       running = true;
+      runStart = session.sessionManager.getEntries().length;
       session.prompt(text, { expandPromptTemplates: false, source: "extension" }).catch(failStart);
     };
 
     const sendCustomNow = (custom: PiCustom) => {
       running = true;
+      runStart = session.sessionManager.getEntries().length;
       session.sendCustomMessage(custom, { triggerTurn: true }).catch(failStart);
     };
 
@@ -406,7 +409,7 @@ export const createPiRuntime = (
       abort: () => session.abort(),
       dispose,
       ownUsage: (): UsageTotals => sumUsage(session.sessionManager.getEntries()),
-      runTexts: () => finalRunTexts(session.sessionManager.getEntries()),
+      runTexts: () => finalRunTexts(session.sessionManager.getEntries().slice(runStart)),
     };
   };
 

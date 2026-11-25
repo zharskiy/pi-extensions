@@ -86,6 +86,15 @@ describe("nested agents", () => {
     expect(runtime.children[1].spec.customTools?.map((tool) => tool.name)).toEqual(["handoff"]);
   });
 
+  it("ends an agent's turn once its run_agent starts a batch, and not the main session's", async () => {
+    const { runMain, runtime, spawnFrom } = setup();
+    const main = await runMain([{ agent: "general", task: "investigate and fix" }]);
+    const nested = await spawnFrom(runtime.children[0], [{ agent: "scout", task: "look" }]);
+
+    expect(main.terminate).toBe(false);
+    expect(nested.terminate).toBe(true);
+  });
+
   it("gives no agent tools at the depth cap", async () => {
     const { startGeneral } = setup({ maxDepth: 2 });
     const { child } = await startGeneral();
