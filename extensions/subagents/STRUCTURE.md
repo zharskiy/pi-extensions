@@ -14,7 +14,7 @@ extensions/subagents/
 │   ├── leads/                             # planner.md, implementer.md, reviewer.md, general.md (leads: they may start subagents; reviewer, planner and general share a model, implementer has its own and is granted the package's `pinata-code-style` skill)
 │   └── chores/                            # scout.md, fetch.md, shell.md, image.md, verifier.md (chores: subagents none)
 ├── prompts/
-│   ├── main-session.md                    # the main session's prompt section
+│   ├── main-session.md                    # the main session's prompt section; `# After a change` holds the one review round, then the verifier
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
 │   ├── delegating.md                      # how to delegate and read results: the static rules describeRunAgent ends every run_agent description with
 │   ├── base-system-prompt.md              # shared agent rules and the result contract (a handoff replaces it: no reply)
