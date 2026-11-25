@@ -25,7 +25,7 @@ describe("plan rows", () => {
   });
 
   it("splits on commas, semicolons and 'and', and strips trailing punctuation", () => {
-    expect(paths("- agent: editor; description: x; files: src/a.ts; src/b.ts and src/c.ts.")).toEqual([
+    expect(paths("- agent: implementer; description: x; files: src/a.ts; src/b.ts and src/c.ts.")).toEqual([
       "src/a.ts",
       "src/b.ts",
       "src/c.ts",
@@ -33,9 +33,9 @@ describe("plan rows", () => {
   });
 
   it("expands brace sets before splitting", () => {
-    expect(paths("- agent: editor; description: x; files: src/{limits,settings}.ts, test/x.test.ts")).toEqual(
-      ["src/limits.ts", "src/settings.ts", "test/x.test.ts"],
-    );
+    expect(
+      paths("- agent: implementer; description: x; files: src/{limits,settings}.ts, test/x.test.ts"),
+    ).toEqual(["src/limits.ts", "src/settings.ts", "test/x.test.ts"]);
   });
 
   it("keeps globs as written so the caller can leave them out of the existence check", () => {
@@ -46,8 +46,8 @@ describe("plan rows", () => {
 
   it("accepts numbered and starred rows", () => {
     const text = [
-      "1. agent: editor; description: x; files: src/a.ts",
-      "* agent: editor; description: y; files: src/b.ts",
+      "1. agent: implementer; description: x; files: src/a.ts",
+      "* agent: implementer; description: y; files: src/b.ts",
     ];
 
     expect(paths(text.join("\n"))).toEqual(["src/a.ts", "src/b.ts"]);
@@ -75,7 +75,7 @@ describe("plan rows", () => {
   });
 
   it("keeps absolute paths for the caller to make relative", () => {
-    expect(paths("- agent: editor; description: x; files: /tmp/project/src/a.ts")).toEqual([
+    expect(paths("- agent: implementer; description: x; files: /tmp/project/src/a.ts")).toEqual([
       "/tmp/project/src/a.ts",
     ]);
   });

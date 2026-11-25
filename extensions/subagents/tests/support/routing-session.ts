@@ -13,8 +13,9 @@ import { PACKAGE_ROOT } from "./subagents-harness.ts";
 
 export type { RunAgentParams } from "../../core/run-agent/tools.ts";
 
-export const mainSessionPrompt = () =>
-  readFileSync(join(PACKAGE_ROOT, "prompts", "main-session.md"), "utf8").trim();
+const prompt = (file: string) => readFileSync(join(PACKAGE_ROOT, "prompts", file), "utf8").trim();
+
+export const mainSessionPrompt = () => prompt("main-session.md");
 
 const roster = () => {
   const loaded = loadDefinitions([{ path: join(PACKAGE_ROOT, "agents"), source: "builtin" }]);
@@ -25,11 +26,15 @@ const roster = () => {
 const runAgentDescription = () => {
   const settings = defaultSettings();
 
-  return describeRunAgent(roster(), {
-    callerDepth: 1,
-    maxDepth: settings.maxDepth,
-    maxConcurrent: settings.maxConcurrent,
-  });
+  return describeRunAgent(
+    roster(),
+    {
+      callerDepth: 1,
+      maxDepth: settings.maxDepth,
+      maxConcurrent: settings.maxConcurrent,
+    },
+    prompt("delegating.md"),
+  );
 };
 
 const startedText = (params: RunAgentParams, batch: number) => {

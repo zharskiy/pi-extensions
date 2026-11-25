@@ -12,10 +12,11 @@ extensions/subagents/
 ├── STRUCTURE.md                           # this file
 ├── agents/                                # shipped agent definitions (every `limit:` is at most 150000)
 │   ├── leads/                             # planner.md, implementer.md, reviewer.md, general.md (leads: they may start subagents; reviewer, planner and general share a model, implementer has its own and is granted the package's `pinata-code-style` skill)
-│   └── chores/                            # scout.md, editor.md, fetch.md, shell.md, image.md, verifier.md (chores: subagents none)
+│   └── chores/                            # scout.md, fetch.md, shell.md, image.md, verifier.md (chores: subagents none)
 ├── prompts/
 │   ├── main-session.md                    # the main session's prompt section
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
+│   ├── delegating.md                      # how to delegate and read results: the static rules describeRunAgent ends every run_agent description with
 │   ├── base-system-prompt.md              # shared agent rules and the result contract (a handoff replaces it: no reply)
 │   ├── create-agent.md                    # the /agents create brief
 │   └── autosetup-skills.md                # the /agents setup skills brief
@@ -60,7 +61,7 @@ extensions/subagents/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events; restore repairs the links of the restored records
 │   ├── run-agent/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (one ChildSession.send for routed and custom messages), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn), the launch and settle guards (startLaunch, failRun), the fallback handoff reply written with writeHandoffFile
-│   │   ├── tools.ts                       # run_agent, message_agent and stop_agent specs, params and details types, describeRunAgent
+│   │   ├── tools.ts                       # run_agent, message_agent and stop_agent specs, params and details types, describeRunAgent (with the delegation guide)
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers; wakeMessage, the hidden pi-subagents:wake both get
 │   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement

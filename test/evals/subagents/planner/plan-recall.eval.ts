@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { it } from "vitest";
 import {
@@ -35,6 +35,7 @@ type Outcome = {
   unscored: string[];
   missing: string[];
   globs: string[];
+  planFile: boolean;
   helpers: string[];
   handover: string[];
   calls: number;
@@ -50,16 +51,26 @@ const MIN_NAMED = 2;
 
 const MAX_MISSING = 2;
 
+const PLAN_FILE_CASE = "00103e4";
+
 const projectRelative = (project: string, path: string) => relativeTo([project, realpathSync(project)], path);
 
 const isMissing = (project: string, file: PlanFile) =>
   !file.isNew && !existsSync(join(project, file.path)) && !existsSync(join(project, dirname(file.path)));
 
 const planOnce = async (live: LiveHarness, entry: PlannerCase, label: string): Promise<Outcome> => {
-  const chain = await runChain(live, "planner", entry.request, RUN_TIMEOUT_MS);
+  const planPath = entry.sha === PLAN_FILE_CASE ? join(dirname(live.project), "plan.md") : undefined;
+  const request = planPath ? `${entry.request}\n\nWrite the plan to ${planPath}.` : entry.request;
+  const chain = await runChain(live, "planner", request, RUN_TIMEOUT_MS);
   const planner = chain.terminal;
   const text = planner?.resultText ?? "";
-  const files = planFiles(text).map((file) => ({ ...file, path: projectRelative(live.project, file.path) }));
+  const named = /^Plan file: (.+)$/
+    .exec(text.trim().split("\n").at(-1) ?? "")?.[1]
+    ?.replaceAll("`", "")
+    .trim();
+  const written = planPath !== undefined && existsSync(planPath);
+  const rows = planPath ? (written ? readFileSync(planPath, "utf8") : "") : text;
+  const files = planFiles(rows).map((file) => ({ ...file, path: projectRelative(live.project, file.path) }));
   const paths = files.map((file) => file.path);
   const state = chain.timedOut ? "timeout" : (planner?.state ?? "missing");
 
@@ -71,6 +82,7 @@ const planOnce = async (live: LiveHarness, entry: PlannerCase, label: string): P
       .filter((file) => !file.path.includes("*") && isMissing(live.project, file))
       .map((file) => file.path),
     globs: paths.filter((path) => path.includes("*")),
+    planFile: written && named !== undefined && existsSync(named),
     helpers: chain.helpers,
     handover: handoverLines(live, chain, false),
     calls: chain.calls,
@@ -91,6 +103,9 @@ const rubricFor = (entry: PlannerCase): Rubric<Outcome> => [
   ...(entry.maxHelpers === undefined
     ? []
     : [{ name: "lean", passes: (outcome: Outcome) => outcome.helpers.length <= (entry.maxHelpers ?? 0) }]),
+  ...(entry.sha === PLAN_FILE_CASE
+    ? [{ name: "plan file written", passes: (outcome: Outcome) => outcome.planFile }]
+    : []),
 ];
 
 const listed = (label: string, paths: string[]) =>

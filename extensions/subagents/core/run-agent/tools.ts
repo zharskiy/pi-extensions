@@ -92,34 +92,25 @@ const capRule = ({ childCap }: RunAgentLimits) =>
   childCap === undefined
     ? []
     : [
-        `- Cap: you may start at most ${childCap} agents in this run, across all your batches; further calls are refused. Do not start an agent for work of a few tool calls.`,
-        "- Delegating: give searching, command runs and web pages to the agents above whose descriptions fit, and ask for path:line citations with the quoted line, not conclusions.",
+        `- Cap: you may start at most ${childCap} agents in this run, across all your batches; further calls are refused. Never hand your whole task to another agent: if you cannot finish it, return \`Status: partial\` with what is left under Open.`,
       ];
 
-export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgentLimits): string =>
+export const describeRunAgent = (
+  allowedAgents: DelegateAgent[],
+  limits: RunAgentLimits,
+  guide: string,
+): string =>
   [
     "Start one or more background agents as one batch. Each agent gets its own context window, works alone with no access to this conversation, and returns one result. The call returns at once with agent ids and you are woken once, with every result of the batch, when all of its agents are done; after starting a batch, end your turn.",
     "Agents you may start:",
     agentList(allowedAgents, limits),
     [
-      "Rules:",
-      '- Choosing: pick the agent whose description fits the work, never because a model was named. "Review X with model M" is the reviewing agent with a model override.',
-      "- Model: each agent runs on the model shown next to it. Set `model` only when the user (or, for an agent, its task) explicitly names a model or thinking level for this work; never choose or change a model yourself, for cost, speed or any other reason. Pass the words unchanged as `name[:thinking]` (a name, a name with `:high`, or `:low` alone). The harness resolves the name, tolerating misspellings and picking the newest version, and reports the model it runs. If it reports an ambiguous or unknown model, nothing was started: ask the user with the listed candidates and reuse the answer for the rest of the conversation. If the only matches lack credentials, tell the user (they can log in with `/login`) and ask whether to run the agent on its own model; never drop a requested model silently.",
-      "- Skills: `skills` adds skills, by name, to the agent's own for this task. Pass skills you have yourself (in the main session, the skills loaded into it) whose descriptions fit the task, plus any skill the user named; chores (scout, editor, fetch, shell, image, verifier) take none. A skill you do not have starts nothing, and the error lists yours. An agent with `skills: all` gets every skill you have.",
+      "Limits:",
       depthRule(limits),
       ...capRule(limits),
       `- Concurrency: at most ${limits.maxConcurrent} agents run at the same time across the whole tree; extra agents wait in a queue.`,
-      "- Context limit: an agent that reaches its context limit writes a handoff file. When the handoff says the work is partial, the harness starts a successor from it in the same batch on its own; you are not woken and the chain counts as one agent. Only when the chain cap is reached or the handoff says blocked does the agent end as handoff.",
-      "- Batches: put independent tasks in one call so they run in parallel. Run a dependent task in a later call, after the results it depends on have arrived.",
     ].join("\n"),
-    [
-      "Result contract: one message per batch with one section per agent, headed `## <id> (<agent>) - <state>`.",
-      "- done: the result follows inline; when it is large only its head is inline and a last line `Result file: <path> (<N> more chars)` points to the full text. A `(shape: no Status line)` note means it does not follow the shape below. It starts with `Status: done`, `Status: partial` (its Open line says what is left) or `Status: blocked` (it changed nothing; either the task was ambiguous and it lists the questions, or a `Wrong agent:` line says the task belongs to another agent: start that one with the same task), and ends with `Verification:` and `Open:` lines.",
-      "- failed: the reason, plus the agent's last output under an `(unverified partial output: <reason>)` note when it had any; it is not a result.",
-      "- stopped: the reason, plus the agent's last output under an `(unverified partial output: <reason>)` note when it had any.",
-      "- handoff: `Handoff file: <path>`; the agent ran out of context before finishing and could not be continued automatically (blocked, the chain cap was reached, or the file does not follow the handoff schema, shown as `(invalid: <reasons>)` after the path). To continue, start a new agent and pass the handoff file in `files`.",
-      "- A `Chain: <id> → <id> (N sessions)` line means the agent continued itself from handoffs; the section carries the last session's id and the totals of all sessions. Any id of the chain works with `message_agent` and `agent_status`.",
-    ].join("\n"),
+    guide,
   ].join("\n\n");
 
 const runAgentParameters = {
@@ -128,8 +119,7 @@ const runAgentParameters = {
     agents: {
       type: "array",
       minItems: 1,
-      description:
-        "Agents to start as one batch. They run in parallel; you are woken once when all are done.",
+      description: "Agents to start as one batch.",
       items: {
         type: "object",
         properties: {
@@ -137,7 +127,7 @@ const runAgentParameters = {
           task: {
             type: "string",
             description:
-              "Self-contained brief with one line each: Goal, User's words, Known, Where to look, Scope, Done when, Return.",
+              "Self-contained brief with the fields under Brief above, each on its own line: Goal, User's words, Known, Where to look, Scope, Done when, Return.",
           },
           description: {
             type: "string",
@@ -151,13 +141,13 @@ const runAgentParameters = {
           model: {
             type: "string",
             description:
-              "Only when the user explicitly named a model or thinking level for this task: their words as `name[:thinking]`, for example `provider/id`, a short model name, `name:high`, or `:low` to change only the thinking level. Omit to use the agent's own model.",
+              "Only when the user (or, for an agent, its task) explicitly named a model or thinking level for this task: their words unchanged as `name[:thinking]`, for example `provider/id`, a short model name, `name:high`, or `:low` to change only the thinking level. Omit to use the agent's own model.",
           },
           skills: {
             type: "array",
             items: { type: "string" },
             description:
-              "Skill names to add for this agent: skills you have whose descriptions fit the task, plus any the user named. None for chores. A skill you do not have starts nothing; the error lists yours.",
+              "Skill names to add to the agent's own for this task: skills you have (in the main session, the skills loaded into it) whose descriptions fit the task, plus any the user named. None for chores (scout, fetch, shell, image, verifier). A skill you do not have starts nothing; the error lists yours.",
           },
         },
         required: ["agent", "task"],

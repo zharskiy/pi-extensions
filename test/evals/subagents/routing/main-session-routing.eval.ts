@@ -111,11 +111,12 @@ const rubricFor = (entry: RoutingCase): Rubric<Outcome> => [
   {
     name: "agent",
     passes: (outcome) =>
-      entry.agent === undefined ||
-      agentsOf(outcome).includes(entry.agent) ||
-      (entry.direct === true && agentsOf(outcome).length === 0),
+      (entry.never === undefined || !agentsOf(outcome).includes(entry.never)) &&
+      (entry.agent === undefined ||
+        agentsOf(outcome).includes(entry.agent) ||
+        (entry.direct === true && agentsOf(outcome).length === 0)),
     explain: (outcome) =>
-      `agents [${agentsOf(outcome).join(", ")}], expected ${entry.agent}${entry.direct ? " or a direct answer" : ""}`,
+      `agents [${agentsOf(outcome).join(", ")}], expected ${entry.agent}${entry.direct ? " or a direct answer" : ""}${entry.never ? `, never ${entry.never}` : ""}`,
   },
   {
     name: "skill",
