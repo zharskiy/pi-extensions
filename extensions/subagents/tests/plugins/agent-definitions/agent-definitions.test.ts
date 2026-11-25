@@ -620,7 +620,7 @@ describe("definition loading", () => {
     expect(grants("reviewer")).toEqual([["read", "grep", "find", "ls", "bash"], [], ["scout", "shell"]]);
     expect(grants("implementer")).toEqual([
       ["read", "grep", "find", "ls", "edit", "write", "bash"],
-      [],
+      ["pinata-code-style"],
       ["scout", "shell", "verifier"],
     ]);
     expect(grants("fetch")).toEqual([["fetch", "read"], [], []]);
@@ -634,6 +634,25 @@ describe("definition loading", () => {
       ["scout", "editor", "fetch", "shell", "image", "verifier", "planner", "implementer", "reviewer"],
     ]);
     expect(result.definitions.get("general")?.description).toMatch(/^Use only when no other agent fits/);
+  });
+
+  it("ships every skill a shipped agent is granted", () => {
+    const root = join(PACKAGE_ROOT, "..", "..");
+    const result = loadDefinitions([{ path: join(PACKAGE_ROOT, "agents"), source: "builtin" }]);
+    const granted = [...result.definitions.values()].flatMap((definition) =>
+      Array.isArray(definition.skills) ? definition.skills : [],
+    );
+
+    granted.forEach((name) => {
+      const skill = parseFrontmatter(readFileSync(join(root, "skills", name, "SKILL.md"), "utf8"));
+
+      expect(skill.data.name).toBe(name);
+    });
+
+    const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+
+    expect(manifest.pi.skills).toEqual(["./skills"]);
+    expect(manifest.files).toContain("skills");
   });
 
   it("declares exactly the frontmatter schema's fields in each shipped file, in the schema's order", () => {
@@ -887,7 +906,7 @@ describe("agent-definitions plugin", () => {
         },
       },
       beforeStart: ({ runtime }) => {
-        runtime.skills = ["docs"];
+        runtime.skills = ["docs", "pinata-code-style"];
       },
     });
 

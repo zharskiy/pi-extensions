@@ -4,7 +4,7 @@
 
 **Background agents, session awareness and a calmer terminal for the [pi coding agent](https://pi.dev).**
 
-Fifteen extensions in one pi package (`@zharskiy/pinata`), built on one small shared platform.
+Fifteen extensions and several skills in one pi package (`@zharskiy/pinata`), built on one small shared platform.
 
 [![npm version](https://img.shields.io/npm/v/@zharskiy/pinata)](https://www.npmjs.com/package/@zharskiy/pinata)
 
@@ -47,7 +47,7 @@ pi -e ./pinata/extensions/<name>/index.ts          # one extension for a single 
 
 To run pi in the sandbox with them, install with `pinata` instead ([Install, update and uninstall](#install-update-and-uninstall)).
 
-The package installs fifteen extensions:
+The package installs its skills (`pinata-code-style`, the code style the [subagents](extensions/subagents/README.md) implementer writes by, which pi lists for the main session too) and fifteen extensions:
 
 **Agents and tools**
 

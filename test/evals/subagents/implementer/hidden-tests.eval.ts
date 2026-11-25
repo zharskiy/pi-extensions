@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { it } from "vitest";
@@ -37,6 +37,7 @@ type Outcome = {
   status: string;
   passed: boolean;
   tests: string;
+  styleRead: boolean;
   helpers: string[];
   handover: string[];
   calls: number;
@@ -46,6 +47,8 @@ type Outcome = {
   largestBash: number;
   record: RunRecord;
 };
+
+const STYLE_SKILL = "pinata-code-style";
 
 const RUN_TIMEOUT_MS = 420_000;
 
@@ -93,6 +96,21 @@ const largestBashOf = (links: AgentRecord[]) =>
     return Math.max(max, largestToolOutput(outputs, "bash"));
   }, 0);
 
+const readStyleBeforeEdit = (links: AgentRecord[]) => {
+  const calls = links
+    .flatMap((link) => (link.sessionFile ? sessionFacts(link.sessionFile).events : []))
+    .flatMap((event) => (event.type === "tool_call" ? [event] : []));
+  const firstEdit = calls.findIndex((call) => call.name === "edit" || call.name === "write");
+
+  return calls
+    .slice(0, firstEdit === -1 ? undefined : firstEdit)
+    .some(
+      (call) =>
+        call.name === "read" &&
+        String((call.arguments as { path?: unknown })?.path).endsWith(`${STYLE_SKILL}/SKILL.md`),
+    );
+};
+
 const implementOnce = async (entry: ImplementerCase, index: number): Promise<Outcome> => {
   const label = `implement ${entry.sha} run ${index + 1}`;
   const live = createLiveHarness(label, {
@@ -101,6 +119,12 @@ const implementOnce = async (entry: ImplementerCase, index: number): Promise<Out
       scout: { from: "scout" },
       shell: { from: "shell" },
       verifier: { from: "verifier" },
+    },
+    skills: {
+      [STYLE_SKILL]: readFileSync(
+        join(import.meta.dirname, "../../../../skills", STYLE_SKILL, "SKILL.md"),
+        "utf8",
+      ),
     },
   });
 
@@ -118,6 +142,7 @@ const implementOnce = async (entry: ImplementerCase, index: number): Promise<Out
     return {
       status,
       ...hidden,
+      styleRead: readStyleBeforeEdit(chain.links),
       helpers: chain.helpers,
       handover: handoverLines(live, chain, true),
       calls: chain.calls,
@@ -137,6 +162,10 @@ const rubric: Rubric<Outcome> = [
     name: "hidden tests",
     passes: (outcome) => outcome.status === "done" && outcome.passed,
     explain: (outcome) => `${outcome.status}, ${outcome.tests}`,
+  },
+  {
+    name: "style skill read",
+    passes: (outcome) => outcome.styleRead,
   },
 ];
 
