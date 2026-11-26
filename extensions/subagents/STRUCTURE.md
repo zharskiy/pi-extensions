@@ -61,7 +61,7 @@ extensions/subagents/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events; restore repairs the links of the restored records
 │   ├── run-agent/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (one ChildSession.send for routed and custom messages), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn), the launch and settle guards (startLaunch, failRun), the fallback handoff reply written with writeHandoffFile
-│   │   ├── tools.ts                       # run_agent, message_agent and stop_agent specs, params and details types, describeRunAgent (with the delegation guide)
+│   │   ├── tools.ts                       # run_agent, message_agent and stop_agent specs, params and details types, describeRunAgent (with the delegation guide); an agent's run_agent result sets terminate
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers; wakeMessage, the hidden pi-subagents:wake both get
 │   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement

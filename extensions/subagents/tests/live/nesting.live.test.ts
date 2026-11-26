@@ -43,9 +43,16 @@ describeLive("live nested agents", () => {
     const scout = live.registry.list().find((record) => record.callerId === generalId);
     const scoutId = scout?.id ?? "missing";
 
-    const wakes = sessionLines(general?.sessionFile ?? "").filter(
-      (line) => line.message?.role === "user" && JSON.stringify(line.message.content).includes(scoutId),
+    const lines = sessionLines(general?.sessionFile ?? "");
+    const wakes = lines.filter(
+      (line) => line.type === "custom_message" && JSON.stringify(line.content).includes(scoutId),
     );
+    const started = lines.findIndex((line) => line.message?.toolName === "run_agent");
+    const woken = lines.indexOf(wakes[0]);
+
+    expect(started).toBeGreaterThan(-1);
+    expect(woken).toBeGreaterThan(started);
+    expect(lines.slice(started, woken).filter((line) => line.message?.role === "assistant")).toEqual([]);
 
     expect(general?.state).toBe("done");
     expect(general?.resultText).toContain(SECRET);

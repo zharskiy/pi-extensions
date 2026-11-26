@@ -317,10 +317,12 @@ const scriptedSession = () => {
   const agentQueue: string[] = [];
   const bindings: unknown[] = [];
   const appended: string[] = [];
+  const entries: unknown[] = [];
 
   const session = {
     isStreaming: false,
     sessionFile: undefined,
+    sessionManager: { getEntries: () => entries },
     bindExtensions: async (options: unknown) => {
       bindings.push(options);
 
@@ -402,6 +404,9 @@ const scriptedSession = () => {
       listener({ type: "message_start", message: { role: "custom", customType, content } }),
     agentQueue,
     appended,
+    record: (...added: unknown[]) => {
+      entries.push(...added);
+    },
     leaveQueued: (text: string) => {
       queued.push(text);
     },
@@ -710,6 +715,30 @@ describe("child prompting", () => {
 
     expect(calls).toEqual(["emit session_shutdown", "dispose"]);
   });
+
+  const entry = (role: string, content: unknown[]) => ({ type: "message", message: { role, content } });
+
+  it.each([
+    ["Status: done\nfinal", ["Status: done\nfinal"]],
+    ["", []],
+  ])(
+    "reads only the wake run's texts after a run that ended on a tool result (reply %j)",
+    async (reply, texts) => {
+      const { child, settle, record } = await spawnScripted();
+
+      child.start("task");
+      record(
+        entry("user", [{ type: "text", text: "task" }]),
+        entry("assistant", [{ type: "text", text: "Status: done\nearly answer" }, { type: "toolCall" }]),
+        entry("toolResult", [{ type: "text", text: "Started batch b1" }]),
+      );
+      settle();
+      await child.send(wake("results"), "followUp", { hidden: true });
+      record({ type: "custom_message" }, entry("assistant", [{ type: "text", text: reply }]));
+
+      expect(child.runTexts()).toEqual(texts);
+    },
+  );
 
   it("binds the child's extensions without a UI context", async () => {
     const { bindings } = await spawnScripted();

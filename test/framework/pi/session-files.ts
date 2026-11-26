@@ -33,7 +33,12 @@ export const sessionFacts = (file: string) => {
   return { tools: [...replaySystemMessages(messages).tools.keys()], events, calls, results };
 };
 
-type SessionLine = { type?: string; parentSession?: string; message?: { role?: string; content?: unknown } };
+type SessionLine = {
+  type?: string;
+  parentSession?: string;
+  content?: unknown;
+  message?: { role?: string; content?: unknown; toolName?: string };
+};
 
 export const sessionLines = (file: string) =>
   readFileSync(file, "utf8")

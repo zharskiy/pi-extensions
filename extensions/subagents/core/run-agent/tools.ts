@@ -203,7 +203,7 @@ export const runAgentTool = (
       .join("\n");
     const text = `Started batch ${started.batchId}:\n${list}\nYou will be woken once when all agents are done. End your turn now.`;
 
-    return { text, details };
+    return { text, details, terminate: callerId !== MAIN_CALLER };
   },
   renderCall: () => "",
   renderResult: (result, state, theme) => deps.rows.runAgent(result, state, theme),

@@ -4,6 +4,7 @@ export type ToolResult<D = unknown> = {
   text: string;
   details?: D;
   isError?: boolean;
+  terminate?: boolean;
 };
 
 export type ToolRenderState = {
