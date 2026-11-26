@@ -1,6 +1,6 @@
 # Synced workspace: architecture plan
 
-Status: **draft 4**, 2026-11-24. Written against `main` after PR 83 merged (dbd9539c). Revised after two independent reviews, an end-to-end rehearsal (S7), a check of the launcher's rails (C4) and the studies R6, R7 and S5. All measurements are in. Every "measured" below has its numbers in [progress.md](progress.md). Nothing here is implemented.
+Status: **draft 4**, 2026-11-24. Written against `main` after PR 83 merged (dbd9539c). Revised after two independent reviews, an end-to-end rehearsal (S7), a check of the launcher's rails (C4) and the studies R6, R7 and S5. All measurements are in. Every "measured" below has its numbers in [attempt-1-progress.md](attempt-1-progress.md). Nothing here is implemented.
 
 ## The idea in one paragraph
 

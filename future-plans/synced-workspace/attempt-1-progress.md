@@ -2,7 +2,7 @@
 
 Tracks the investigation into "Too many open files" on the host while the sandbox VM runs, and the research toward keeping the workspace on the VM's disk instead of sharing it live.
 
-Status: **research finished 2026-11-24, nothing implemented.** The plan is [architecture.md](architecture.md). Implementation starts only when asked.
+Status: **research finished 2026-11-24, nothing implemented.** The plan is [attempt-1-architecture.md](attempt-1-architecture.md). Implementation starts only when asked.
 
 Last updated: 2026-11-24.
 
@@ -59,7 +59,7 @@ The workspace lives in a volume on the VM's disk, mounted in containers at the s
 | C4 | Launcher rail facts for the plan's attachment points, read on `main` after PR 83 merged. | done |
 | V1 | Independent review of draft 1 of the plan. | done: sound with changes |
 | V2 | Second independent review, of draft 3, against the code on `main`. | done: sound with changes |
-| A1 | Architecture plan: draft 4 in [architecture.md](architecture.md), written against `main` after PR 83, with both reviews and every measurement folded in. | done, awaiting the owner's decisions |
+| A1 | Architecture plan: draft 4 in [attempt-1-architecture.md](attempt-1-architecture.md), written against `main` after PR 83, with both reviews and every measurement folded in. | done, awaiting the owner's decisions |
 
 ## Results of the research round
 
