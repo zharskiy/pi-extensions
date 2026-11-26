@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.1](https://github.com/zharskiy/pinata/compare/v1.2.0...v1.2.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **subagents:** end an agent's turn once it starts a batch ([a75e727](https://github.com/zharskiy/pinata/commit/a75e727a6a6f3ee40d159080cbee9c00f2a400a2))
+* **subagents:** end an agent's turn once it starts a batch ([e309cd9](https://github.com/zharskiy/pinata/commit/e309cd9e28b97727ff752e7ca04b53199a705ab0))
+* **subagents:** review a change only once ([9c8ea0d](https://github.com/zharskiy/pinata/commit/9c8ea0d7e8de9871c3ffbebb75dc9c6d828c1b3c))
+* **subagents:** review a change only once ([9de622c](https://github.com/zharskiy/pinata/commit/9de622c9f63fce3fb0c3a5583b4b7b5d1152beb9))
+
 ## [1.2.0](https://github.com/zharskiy/pinata/compare/v1.1.0...v1.2.0) (2026-11-25)
 
 
