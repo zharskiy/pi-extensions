@@ -8,7 +8,9 @@ import {
   forwardedNames,
   type LauncherContainerSpec,
   runPi,
+  seedVolumes,
   startLaunchContainer,
+  volumeSeeds,
 } from "../container/index.ts";
 import type { Launch } from "../grants/index.ts";
 import { type HostPi, readHostPiFiles } from "../hostpi/index.ts";
@@ -23,7 +25,14 @@ import {
 } from "../provision/index.ts";
 import { type DenialRecord, preambleText } from "../proxy/index.ts";
 import { errorMessage, settleAll, stateLayout, type WriteBackTable } from "../shared/index.ts";
-import { confirmBinds, type HostBind, type HostSessions, hostBinds } from "../workspace/index.ts";
+import {
+  confirmBinds,
+  type HostBind,
+  type HostSessions,
+  hostBinds,
+  hostVolumeSources,
+  type VolumeSource,
+} from "../workspace/index.ts";
 import { busyLaunches } from "./busy.ts";
 import { hostClipboard } from "./clipboard.ts";
 import { checkHostRoot, type LaunchContext, openContext } from "./context.ts";
@@ -109,6 +118,7 @@ interface SandboxInput {
   writeBack: boolean;
   allowlist: WriteBackTable;
   binds: HostBind[];
+  volumeSources: VolumeSource[];
   probe: boolean;
   forwarded: ForwardedEnv;
   piArgs: string[];
@@ -415,6 +425,19 @@ const setupContainer = (input: PreparedInput, containerId: string) => {
   });
 };
 
+const seedContainerVolumes = (input: PreparedInput, containerId: string) => {
+  const { context } = input;
+
+  return seedVolumes({
+    backend: input.backend,
+    containerId,
+    stateDir: context.stateDir,
+    seeds: volumeSeeds(context.effective.config, context.stateDir, input.volumeSources),
+    signal: input.cancelled,
+    progress: input.progress,
+  });
+};
+
 const prepareSandbox = async (input: PreparedInput) => {
   const { deps, context, backend, launch, cancelled, staged, progress } = input;
   const { host } = input.prepared;
@@ -447,6 +470,10 @@ const prepareSandbox = async (input: PreparedInput) => {
 
         return prepareContainer(input, { image, files: settled, route });
       });
+
+      cancelled.throwIfAborted();
+
+      await seedContainerVolumes(input, container.containerId);
 
       cancelled.throwIfAborted();
 
@@ -604,13 +631,13 @@ export const withSandbox = async (
 ) => {
   const files = await readHostPiFiles(hostAgentDirOf(deps));
   const sessions = hostSessionsOf(deps, context, files.settings);
-  const binds = probe
-    ? []
-    : hostBinds(context.effective.config.mounts.binds, {
-        home: deps.home,
-        env: deps.env,
-        roots: [...writableMounts(context, sessions), ...rootPaths(context.effective.config)],
-      });
+  const guard = {
+    home: deps.home,
+    env: deps.env,
+    roots: [...writableMounts(context, sessions), ...rootPaths(context.effective.config)],
+  };
+  const binds = probe ? [] : hostBinds(context.effective.config.mounts.binds, guard);
+  const volumeSources = probe ? [] : hostVolumeSources(context.effective.config.mounts.volumes, guard);
   const forwarded = forwardedOf(deps, context);
   const staged = stagedWith(report);
   const launch = await beginLaunch(deps, context, progress);
@@ -643,6 +670,7 @@ export const withSandbox = async (
         writeBack,
         allowlist,
         binds,
+        volumeSources,
         probe,
         forwarded,
         piArgs,

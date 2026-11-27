@@ -1,4 +1,4 @@
-export { confirmBinds, type HostBind, hostBinds } from "./binds.ts";
+export { confirmBinds, type HostBind, hostBinds, hostVolumeSources, type VolumeSource } from "./binds.ts";
 export { discoverWorkspace, workspaceFolder } from "./discover.ts";
 export { assertHostSessionsDir, assertSafeMounts } from "./guard.ts";
 export { type HostSessions, hostSessionsChoice, hostSessionsDir } from "./pi-session-dir.ts";

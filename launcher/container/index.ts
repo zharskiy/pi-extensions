@@ -9,6 +9,7 @@ export {
 export { agentVolumeName, configVolumeName } from "./names.ts";
 export type { HostTerminal, SignalSource } from "./run-pi.ts";
 export { runPi } from "./run-pi.ts";
+export { seedVolumes, volumeSeeds } from "./seed.ts";
 export {
   ensureServices,
   installServices,

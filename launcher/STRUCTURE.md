@@ -128,7 +128,7 @@ workspace/discover.ts          the folder to mount (the git root, else the cwd),
 workspace/guard.ts             the refusal of protected folders (home, pi and pinata dirs, credential, system and image dirs) and the host session dir check
 workspace/mounts.ts            the protected path table
 workspace/roots.ts             the workspaceRoot checks (unset, missing, the home or above it, the guard's protected paths and system dirs, outside the root, a git dir or common dir outside the root; the host launch runs only the inside-the-root ones) and the checked root the VM shares
-workspace/binds.ts             the mounts.binds sources on the host: resolved, must exist, the root guard, and the folder the VM must share
+workspace/binds.ts             the mounts.binds sources on the host: resolved, must exist, the root guard, and the folder the VM must share; the mounts.volumes sources through the same guard
 workspace/pi-session-dir.ts    pi's session slug and the host session dir choice
 workspace/sandbox-reach.ts     the roots a sandbox can write (sandboxWriteRoots: the checked workspace root, the folders one has run in and the roots those runs mounted) and whether a path lies in them
 workspace/git/layout.ts        the nearest folder with a .git entry, and the git dir and common dir read from the files
@@ -175,6 +175,8 @@ container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: o
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
 container/clipboard.ts         the clipboard bridges: OSC 52 copies teed to pbcopy, pasted image paths and Ctrl+V images or image files copied into /tmp/pi-paste, an OSC 9 notice when an image import fails, held by the copy tee until pi's output is between escape sequences
 container/host-paths.ts        visibleInside: whether the sandbox sees a host path at the same path
+container/seed.ts              seedVolumes: a mounts.volumes source copied once into its volume, its real path checked again, the archive streamed into tar in the sandbox through exec stdin, the .pinata-seeded marker (no link, holding the source's real path) removed and created exclusively last, under the volume's seed lock; a failure is a warning
+container/archive.ts           sourceArchive: the GNU tar archive of a source folder written by pinata, every path opened with O_NOFOLLOW_ANY, folders, files and links, pi's owner and permission bits, long names, base-256 numbers, the left-out and changed counts, streamed with back-pressure
 ```
 
 ## image/
@@ -391,6 +393,8 @@ tests/container/services.test.ts     the services: one pod for the install and t
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping
 tests/container/run-pi.test.ts       running pi, signals and the terminal bridges
 tests/container/clipboard.test.ts    the copy tee with its held notices, the pasted image path, Ctrl+V and the failed-import notices
+tests/container/seed.test.ts         the volume seed: the sandbox commands, the archive's names, the marker rules, one copy for two launches, the source re-resolved, the left-out count and the failure notices
+tests/container/archive.test.ts      the source archive read by the Mac's tar: long names, links, modes, mtimes, base-256, ._ files, unreadable, vanished and swapped entries, a shrinking file, no open through a linked folder
 tests/image/build.test.ts            base builds
 tests/image/build-network.test.ts    build proxy arguments
 tests/image/layer.test.ts            the image layer: always built, its context and tag, the trust steps, the build proxy

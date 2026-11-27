@@ -140,6 +140,44 @@ describe("mounts.volumes", () => {
     ).toBe("config: mounts.volumes names the volume data twice");
   });
 
+  it("accepts a host source on the object form, an absolute path or ~/, and refuses a relative one", () => {
+    expect(
+      volumesProblem([
+        { target: "~/.m2/repository", name: "maven", source: "~/.m2/repository" },
+        { target: "/opt/data", source: "/Volumes/data/seed" },
+      ]),
+    ).toBeUndefined();
+    expect(volumesProblem([{ target: "/opt/a", source: "seed" }])).toBe(
+      "config: mounts.volumes[0].source seed must be an absolute path or start with ~/",
+    );
+    expect(volumesProblem([{ target: "/opt/a", source: 3 }])).toBe(
+      "config: mounts.volumes[0].source must be a string",
+    );
+  });
+
+  it("gives one volume at most one source, as two entries never share a volume", () => {
+    expect(
+      volumesProblem([
+        { target: "/opt/a", name: "data", source: "/Volumes/one" },
+        { target: "/opt/b", name: "data", source: "/Volumes/two" },
+      ]),
+    ).toBe("config: mounts.volumes names the volume data twice");
+    expect(
+      volumesProblem([
+        { target: "/opt/a", source: "/Volumes/one" },
+        { target: "/opt/a/", source: "/Volumes/two" },
+      ]),
+    ).toBe("config: mounts lists the target /opt/a twice");
+  });
+
+  it("keeps a volume's source as written, ~ unexpanded", async () => {
+    const { config } = await loadWith({
+      mounts: { volumes: [{ target: "~/.m2/repository/", source: "~/.m2/repository" }] },
+    });
+
+    expect(config.mounts.volumes).toEqual([{ target: "~/.m2/repository", source: "~/.m2/repository" }]);
+  });
+
   it("takes the volumes from the config and drops a trailing slash", async () => {
     const { config, sources } = await loadWith({
       mounts: { volumes: ["~/.npm/", { target: "/opt/data/" }] },

@@ -124,6 +124,7 @@ export const stateLayout = (stateDir: string) => ({
   build: join(stateDir, "build"),
   buildContext: (name: string) => join(stateDir, "build", name),
   buildLock: join(stateDir, "locks", "build.lock"),
+  seedLock: (volume: string) => join(stateDir, "locks", `seed-${sha256Hex(volume).slice(0, 8)}.lock`),
   mcpLogin: join(stateDir, "mcp-login.json"),
   mcpLoginFileLock: join(stateDir, "locks", "mcp-login-file.lock"),
   mcpLoginDirPrefix: join(stateDir, "mcp-login-"),

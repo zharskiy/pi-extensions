@@ -325,3 +325,91 @@ describe("setup", () => {
     expect((await statusOf()).binds).toEqual([{ target: "/etc/reference" }]);
   });
 });
+
+describe("mounts.volumes source", () => {
+  const MAVEN = { target: "~/.m2/repository", name: "maven", source: "~/.m2/repository" };
+
+  const MARKER = "/home/pi/.m2/repository/.pinata-seeded";
+
+  const isMarkerCheck = (command: string[]) => command[0] === "test" && command[2] === MARKER;
+
+  it("checks the marker after the hand-over and before setup and pi, and copies nothing when it is there", async () => {
+    const fake = createFakeBackend({ exec: (spec) => (isMarkerCheck(spec.command) ? 0 : undefined) });
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    await mkdir(join(harness.deps.home, ".m2", "repository"), { recursive: true });
+
+    await harness.writeJson(harness.userConfigFile, {
+      mounts: { volumes: [MAVEN] },
+      setup: [["npm", "ci"]],
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    const commands = commandsOf(fake);
+    const handover = commands.findIndex(
+      (command) => command[0] === "/bin/sh" && command[2]?.startsWith("/bin/chown") === true,
+    );
+    const check = commands.findIndex(isMarkerCheck);
+    const setup = commands.findIndex((command) => command[0] === "npm");
+    const pi = commands.findIndex(isPi);
+
+    expect(handover).toBeGreaterThanOrEqual(0);
+    expect([handover < check, check < setup, setup < pi]).toEqual([true, true, true]);
+    expect(commands.some((command) => command[0] === "tar")).toBe(false);
+    expect(harness.stderr()).not.toContain("copying");
+  });
+
+  it("gives one notice for a missing source and still runs setup and pi", async () => {
+    const fake = createFakeBackend({ exec: (spec) => (isMarkerCheck(spec.command) ? 1 : undefined) });
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    await harness.writeJson(harness.userConfigFile, {
+      mounts: { volumes: [MAVEN] },
+      setup: [["npm", "ci"]],
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(
+      "pinata: warning: ~/.m2/repository was not copied into the volume at ~/.m2/repository (~/.m2/repository does not exist); the next launch tries again\n",
+    );
+    expect(commandsOf(fake).some((command) => command[0] === "dd")).toBe(false);
+    expect(commandsOf(fake).some((command) => command[0] === "npm")).toBe(true);
+    expect(commandsOf(fake).some(isPi)).toBe(true);
+  });
+
+  it("refuses a source where a bind source is refused, before it calls the engine", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    await harness.writeJson(harness.userConfigFile, {
+      mounts: { volumes: [{ target: "/opt/home", source: "~" }] },
+    });
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      "pinata: config: mounts.volumes[0].source: ~ is the home dir or holds it, which would share all of it with the sandbox VM",
+    );
+
+    await harness.writeJson(harness.userConfigFile, {
+      mounts: { volumes: [{ target: "/opt/repo", source: harness.repoRoot }] },
+    });
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      `pinata: config: mounts.volumes[0].source: ${harness.repoRoot} overlaps ${harness.repoRoot}, which the sandbox already mounts`,
+    );
+    expect(fake.created).toEqual([]);
+  });
+
+  it("is skipped by the doctor's probe", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    await harness.writeJson(harness.userConfigFile, { mounts: { volumes: [MAVEN] } });
+
+    await runPinata(["doctor"], harness.deps);
+
+    expect(commandsOf(fake).some(isMarkerCheck)).toBe(false);
+  });
+});

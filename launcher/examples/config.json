@@ -48,16 +48,12 @@
     "shmMiB": 512
   },
   "mounts": {
-    "volumes": ["~/.npm", { "target": "/srv/fixtures" }, { "target": "/var/log/db", "name": "db-logs" }],
-    "binds": [{ "source": "~/reference/fixtures", "target": "/etc/fixtures" }]
-  },
-  "setup": [
-    [
-      "sh",
-      "-c",
-      "test -e /srv/fixtures/.seeded || { cp -R /etc/fixtures/. /srv/fixtures/ && touch /srv/fixtures/.seeded; }"
+    "volumes": [
+      "~/.npm",
+      { "target": "/srv/fixtures", "source": "~/reference/fixtures" },
+      { "target": "/var/log/db", "name": "db-logs" }
     ]
-  ],
+  },
   "services": [
     {
       "name": "db",

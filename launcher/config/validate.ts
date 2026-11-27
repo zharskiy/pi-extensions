@@ -486,7 +486,10 @@ const excludedAndAdded: ObjectCheck = (value) => {
   return clash === undefined ? undefined : `excludes and adds ${clash[1]} of ${clash[0]}`;
 };
 
-const VOLUME = shape({ target: namedText(guestTarget), name: text(volumeName) }, ["target"]);
+const VOLUME = shape(
+  { target: namedText(guestTarget), name: text(volumeName), source: namedText(absolutePath) },
+  ["target"],
+);
 
 const volumeAt = (value: unknown, path: string): Problem | undefined =>
   typeof value === "string" ? at(path, named(value, guestTarget(value))) : problemOf(VOLUME, value, path);

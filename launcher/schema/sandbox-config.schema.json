@@ -467,6 +467,11 @@
                     "type": "string",
                     "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
                     "description": "The volume's identity in place of the target, so entries of one name share a volume wherever they are mounted."
+                  },
+                  "source": {
+                    "type": "string",
+                    "pattern": "^(/|~$|~/)",
+                    "description": "A folder on the host, an absolute path or ~/, copied into the volume at the first launch that finds no copy there; refused where a bind source is refused. Files already in the volume stay, and a file at the same path is replaced."
                   }
                 }
               }

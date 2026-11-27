@@ -64,7 +64,7 @@ The file applies to every pi you start in the sandbox, in every folder. There ar
 | `credentials.derive.hosts` | Read credentials only for these hosts. | every host |
 | `credentials.rules` | Credentials you define by hand. | `[]` |
 | `tls.extraCa` | Extra CA certificates to trust. | `[]` |
-| `mounts.volumes` | Folders kept in volumes shared by all your sandboxes ([below](#volumes)). | `[]` |
+| `mounts.volumes` | Folders kept in volumes shared by all your sandboxes, each optionally filled once from a folder of your Mac ([below](#volumes)). | `[]` |
 | `mounts.binds` | Host files or folders mounted read-only inside ([below](#read-only-binds)). | `[]` |
 | `setup` | Commands run in the sandbox at every launch, before pi starts ([below](#setup-commands)). | `[]` |
 | `services` | Long-running processes started before pi, reachable on `localhost` on the ports they declare and shared by every session that uses the same pinata state folder ([below](#services)). | `[]` |
@@ -206,23 +206,39 @@ Your home inside the sandbox lives in memory, so tool caches are lost when pi ex
     "volumes": [
       "~/.npm",
       "~/.cache/pip",
-      { "target": "~/.m2/repository", "name": "maven" }
+      { "target": "~/.m2/repository", "name": "maven", "source": "~/.m2/repository" }
     ]
   }
 }
 ```
 
-- An entry is a target, or an object with `target` and optional `name`.
+- An entry is a target, or an object with `target`, optional `name` and optional `source`.
 - A target is an absolute path or starts with `~/`, which is the sandbox home `/home/pi`. Write a path in the home with `~/`, not `/home/pi/`.
 - Every entry is a user volume: one volume that every sandbox of yours mounts, whatever the folder. No entry is kept apart per repository.
 - The volume is known by its `name` when set, otherwise by the target as written. Without a `name`, changing the target starts a new, empty volume. A `name` is lowercase letters, digits, `.`, `-` and `_`, and two entries may not share it. An entry whose `name` is the name of a [service volume](#services) mounts that same volume.
-- Your Mac's folder of that name is never mounted. The volume starts empty.
+- Your Mac's folder of that name is never mounted. The volume starts empty, unless the entry has a `source`.
+- `source` is a folder of your Mac, an absolute path or one starting with `~/`, that pinata copies into the volume ([below](#copy-a-folder-into-a-volume)).
 - An entry may share a folder with a file pinata puts in your home, such as `~/.m2/repository` beside the rendered `~/.m2/settings.xml`. The sandbox waits until each volume, and the home folders above it, belong to the sandbox user before it writes there, and a launch whose hand-over fails stops.
 - The [target rules](#mount-targets) apply.
 
 Every sandbox can write to a user volume, so a bad package written in one folder reaches the others. Use user volumes for package caches only.
 
 A user volume stays until `pinata restart` or the uninstall, which delete it with the VM; the daily cleanup never removes it.
+
+### Copy a folder into a volume
+
+An entry with a `source` gets a copy of that folder of your Mac, made once:
+
+- The source is checked when pi starts, with the rules of a [bind source](#read-only-binds): not your home or a folder above it, nothing the sandbox protects, not pinata's or pi's folders, and nothing that overlaps the workspace root or pi's session folder. A refused source stops the launch with an error that names `mounts.volumes[<n>].source`.
+- At launch, after the container is up and its volumes belong to the sandbox user, and before `setup` and pi, pinata looks for the file `.pinata-seeded` at the top of the volume (a link at that name does not count). When it is missing, pinata prints `pinata: copying <source> into the volume at <target>, one time`, copies the folder, writes `.pinata-seeded` last, holding the source's real path, and prints `pinata: copied <source> into the volume at <target>`. When the marker names another folder, as after you change `source`, pinata copies nothing and prints `pinata: warning: the volume at <target> holds a copy of <other folder>, so <source> is not copied into it; delete <target>/.pinata-seeded in the sandbox to copy it`.
+- Pinata writes the archive itself and streams it into `tar` in the sandbox, which writes as the sandbox user. Files are owned by `1000:1000` and keep their permission bits and modification times; setuid, setgid and sticky bits are dropped, and every folder gets read, write and search for its owner. Links are copied as links and never followed. Sockets, fifos, devices, macOS `._*` files, extended attributes, ACLs and file flags are left out. Hard links arrive as separate files.
+- The copy reads only inside the source's real path. Pinata resolves the source again before the copy; when it now leads to another folder, nothing is copied and the warning below names both paths. Every file is opened so that a link anywhere in its path makes the open fail, and a folder that turns into a link during the copy is left out, so nothing outside the source is read.
+- An entry that cannot be read (no permission, gone since the folder was listed, or turned into a link) is left out and the copy goes on; the closing line then ends with `; <n> entries could not be read and were left out`. A file that changes size while it is read is cut or padded with zeros to the size it had when it was opened, and the line ends with `; <n> files changed while they were read`. The marker is written all the same, so delete it to copy again.
+- Files already in the volume stay. A file, folder or link at the same path as one in the source is replaced; a link there is removed, not written through. Nothing else is deleted.
+- Two launches never copy into one volume at once: the second waits, prints `pinata: waiting for another pi session to finish copying into <target>`, then finds the marker and copies nothing.
+- A copy that fails never stops the launch: a source that is missing, not a folder or resolving elsewhere, `tar` in the sandbox exiting non-zero, an archive that did not reach its end, a marker that could not be written, or a copy interrupted part-way prints `pinata: warning: <source> was not copied into the volume at <target> (<reason>); the next launch tries again`, writes no marker, and pi starts.
+- On your Mac the copy writes only its lock file, `locks/seed-<hash>.lock` under pinata's state folder; nothing flows back from the volume. Later changes to the source do not reach the volume. Delete `.pinata-seeded` (a plain file) inside the sandbox to copy again at the next launch.
+- `pinata doctor` and services never copy.
 
 ### Read-only binds
 
@@ -669,10 +685,10 @@ A team shares the config by giving everyone the same file: copy it to `~/.pi/age
 - Leaves credential derivation on, so `glab`, npm, pip and Maven work as on the host.
 - Points npm at the internal registry with `env.set`, sets `CI`, and raises the memory, process and `/dev/shm` limits of the container.
 - Keeps the npm cache, a fixtures folder and the database's logs in volumes that every session shares.
-- Mounts a fixtures folder of your Mac read-only and copies it into its volume once, from `setup` (see [below](#seed-a-volume-from-a-read-only-bind)).
+- Copies a fixtures folder of your Mac into its volume once (see [below](#seed-a-volume-from-a-folder-of-your-mac)).
 - Runs a database service on port 5432, whose log volume the agent also mounts (see [below](#read-the-logs-of-a-service)).
 
-Replace the `*.example.internal` names with your own hosts and the service with your own, and add the package registries your team uses to `egress.allow`. The bind source must exist on every Mac that uses the file.
+Replace the `*.example.internal` names with your own hosts and the service with your own, and add the package registries your team uses to `egress.allow`. A Mac without the fixtures folder starts with an empty fixtures volume and a warning.
 
 `pi install`, `pi mcp …`, every `pi update` and `pi config` without `-l` run host pi on the host. They run before the config is read.
 
@@ -680,23 +696,19 @@ Replace the `*.example.internal` names with your own hosts and the service with 
 
 Each recipe is a part of the one config file; merge it with the keys you already have.
 
-### Seed a volume from a read-only bind
+### Seed a volume from a folder of your Mac
 
-A bind is read-only, and a volume starts empty. To get a writable copy of a folder of your Mac, bind it and copy it into a volume once:
+A volume starts empty. To start the sandbox's Maven repository from the one on your Mac, give its volume a `source`:
 
 ```json
 {
   "mounts": {
-    "binds": [{ "source": "~/reference/fixtures", "target": "/etc/fixtures" }],
-    "volumes": [{ "target": "/srv/fixtures" }]
-  },
-  "setup": [
-    ["sh", "-c", "test -e /srv/fixtures/.seeded || { cp -R /etc/fixtures/. /srv/fixtures/ && touch /srv/fixtures/.seeded; }"]
-  ]
+    "volumes": [{ "target": "~/.m2/repository", "name": "maven", "source": "~/.m2/repository" }]
+  }
 }
 ```
 
-The marker is written last, so a copy stopped half-way runs again at the next launch. Every session, in any folder, shares the one copy, so a change made in one folder shows in the others. Delete the marker inside the sandbox to copy again.
+The first launch copies `~/.m2/repository` into the volume, artifacts you built locally included, and later launches find the marker and copy nothing. Name `~/.m2/repository`, not `~/.m2`, so `settings.xml` and its credentials stay on your Mac; pinata renders the sandbox's own `~/.m2/settings.xml`. Every session, in any folder, shares the one copy. Delete `~/.m2/repository/.pinata-seeded` inside the sandbox to copy again at the next launch. See [Copy a folder into a volume](#copy-a-folder-into-a-volume).
 
 ### Shared package caches
 

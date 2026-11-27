@@ -58,6 +58,7 @@ interface VmConfig {
 export interface VolumeEntry {
   target: string;
   name?: string;
+  source?: string;
 }
 
 interface BindEntry {
