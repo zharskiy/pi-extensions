@@ -133,7 +133,7 @@ const glabConfig = (hosts: GlabHost[]) => [
   ]),
 ];
 
-const gitValue = (text: string) =>
+export const gitValue = (text: string) =>
   `"${text
     .replace(/[\r\n]+/g, " ")
     .replaceAll("\\", "\\\\")
@@ -159,6 +159,9 @@ const gitHost = (host: string, helper: string) => [
 ];
 
 const gitConfig = (tools: DerivedTools) => [
+  "[core]",
+  "\tcheckStat = minimal",
+  "\ttrustctime = false",
   ...gitIdentity(tools.git),
   ...tools.glab.flatMap((entry) => gitHost(entry.host, "!glab auth git-credential")),
 ];

@@ -43,8 +43,14 @@ describe("pinata uninstall", () => {
     const pinata = await createPinata({ vm: { inspect: async () => RUNNING } });
     const zshrc = join(pinata.home, ".zshrc");
     const link = join(pinata.home, ".local", "bin", "pinata");
+    const gitconfig = join(pinata.home, ".gitconfig");
     const read = () =>
-      Promise.all([readFile(zshrc, "utf8"), readlink(link), readFile(pinata.harness.userConfigFile, "utf8")]);
+      Promise.all([
+        readFile(zshrc, "utf8"),
+        readFile(gitconfig, "utf8"),
+        readlink(link),
+        readFile(pinata.harness.userConfigFile, "utf8"),
+      ]);
 
     expect(await pinata.run("install", "--yes")).toBe(0);
 
@@ -99,7 +105,7 @@ describe("pinata uninstall", () => {
         "ok Removed the sandbox VM and its data",
         "ok Removed pinata's pi link (~/.local/bin/pi)",
         "ok Removed pinata's extensions from pi",
-        "ok Removed the PATH block from ~/.zshrc",
+        "ok Removed pinata's block from ~/.zshrc",
         "ok Removed pinata's state",
         "",
         "Pinata is uninstalled. Kept on purpose:",
@@ -121,7 +127,7 @@ describe("pinata uninstall", () => {
         "ok Removed the sandbox VM and its data",
         "ok Removed pinata's pi link (~/.local/bin/pi)",
         "! pi is not installed, so pinata's extensions stay listed in pi's settings (~/.pi/agent/settings.json)",
-        "ok Removed the PATH block from ~/.zshrc",
+        "ok Removed pinata's block from ~/.zshrc",
         "ok Removed pinata's state",
         "",
         "Pinata is uninstalled. Kept on purpose:",

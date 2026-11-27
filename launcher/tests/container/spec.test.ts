@@ -269,6 +269,7 @@ describe("buildContainerSpec", () => {
 
   it("holds only the proxy and static sandbox settings, no forwarded terminal variables", () => {
     expect(buildContainerSpec(specInput()).env).toEqual({
+      GIT_OPTIONAL_LOCKS: "0",
       HTTPS_PROXY: "http://pinata-proxy:3128",
       HTTP_PROXY: "http://pinata-proxy:3128",
       ALL_PROXY: "http://pinata-proxy:3128",
@@ -310,14 +311,14 @@ describe("buildContainerSpec", () => {
     expect(forwardedEnv(Object.keys(hostEnv), hostEnv)).toEqual({ EDITOR: "vi" });
   });
 
-  it("names every variable it sets as launcher-set, so none can be forwarded over it", () => {
+  it("names every variable it sets but its defaults as launcher-set, so none can be forwarded over it", () => {
     const spec = buildContainerSpec(
       specInput({
         hostSessions: { dir: "/Users/dev/.pi/agent/sessions/--work-repo--" },
         toolEnv: { GITLAB_TOKEN: "pinata-gl", GITLAB_HOST: "gitlab.com" },
       }),
     );
-    const names = Object.keys(spec.env);
+    const names = Object.keys(spec.env).filter((name) => name !== "GIT_OPTIONAL_LOCKS");
 
     expect(names).toEqual(
       expect.arrayContaining(["HTTPS_PROXY", "NODE_EXTRA_CA_CERTS", "PI_CODING_AGENT_SESSION_DIR"]),
@@ -353,6 +354,15 @@ describe("buildContainerSpec", () => {
 
     expect(env).toMatchObject({ CI: "1", CHROME_PATH: "/usr/bin/chromium", PINATA: "1" });
     expect(env).toEqual(expect.objectContaining(buildContainerSpec(specInput()).env));
+  });
+
+  it("gives way to an env.set value for a default it sets, and lets env.allow forward one", () => {
+    const config = sandboxConfig({ env: { allow: [], set: { GIT_OPTIONAL_LOCKS: "1" } } });
+
+    expect(buildContainerSpec(specInput({ config })).env.GIT_OPTIONAL_LOCKS).toBe("1");
+    expect(forwardedEnv(["GIT_OPTIONAL_LOCKS"], { GIT_OPTIONAL_LOCKS: "1" })).toEqual({
+      GIT_OPTIONAL_LOCKS: "1",
+    });
   });
 
   it("forwards no host value for a name env.set sets, so the env.set value stays", () => {

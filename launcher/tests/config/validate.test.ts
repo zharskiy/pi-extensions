@@ -169,6 +169,7 @@ describe("validateConfig", () => {
       configProblem({ env: { set: { JAVA_TOOL_OPTIONS: "-Dhttps.proxyHost=pinata-proxy" } } }),
     ).toBeUndefined();
     expect(configProblem({ env: { set: { GH_TOKEN: "pinata-github" } } })).toBeUndefined();
+    expect(configProblem({ env: { set: { GIT_OPTIONAL_LOCKS: "1" } } })).toBeUndefined();
     ["HTTPS_PROXY", "no_proxy", "GITLAB_TOKEN", "PINATA", "HOME", "PATH"].forEach((name) => {
       expect(configProblem({ env: { set: { CI: "1", [name]: "x" } } })).toBe(
         `config: env.set["${name}"] is set by pinata and cannot be set`,

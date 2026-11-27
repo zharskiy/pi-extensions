@@ -260,6 +260,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     mounts,
     network: input.proxy.network,
     env: {
+      GIT_OPTIONAL_LOCKS: "0",
       ...config.env.set,
       ...sandboxEnv(input),
       ...handoverEnv(ownedPaths),

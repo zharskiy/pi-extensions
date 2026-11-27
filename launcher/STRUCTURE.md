@@ -92,11 +92,13 @@ cli/commands/help.ts           the command table, printed whole for help and eve
 cli/commands/options.ts        the option check of the sandbox commands and egress
 cli/pinata/run.ts              pinata: the one command table, install, update and uninstall and the sandbox commands, with their flags
 cli/pinata/host.ts             the package name, the preflight (root, Node, colima installed with brew when missing), host pi run captured, the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
-cli/pinata/install.ts          pinata install: host pi requirement, pi install of the package, the link, the PATH blocks, then pinata init, and the closing block (installed, or nothing changed)
+cli/pinata/install.ts          pinata install: host pi requirement, pi install of the package, the link, the shell blocks, the git block, then pinata init, and the closing block (installed, or nothing changed)
 cli/pinata/update.ts           pinata update: checkout refusal, host pi requirement, preflight, npm install -g of the package, then the new copy's pinata install --yes
-cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox (each folder released, then under the ground and launch registry locks a second session count, the proxy stopped and the teardown it is given, silent unless a folder's session started meanwhile), removeSandbox (releaseSandbox with the colima profile deleted under its locks and the VM lock, shared with restart), the link, pi remove (a warning instead without a host pi), the PATH blocks, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the PATH blocks and npm uninstall -g
+cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox (each folder released, then under the ground and launch registry locks a second session count, the proxy stopped and the teardown it is given, silent unless a folder's session started meanwhile), removeSandbox (releaseSandbox with the colima profile deleted under its locks and the VM lock, shared with restart), the link, pi remove (a warning instead without a host pi), the shell blocks, the git block, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the shell and git blocks and npm uninstall -g
 cli/pinata/shim.ts             ~/.local/bin/pi: what may be replaced, the link, the recorded managed link and its restore; ~/.local/bin/pinata of a checkout, pinata's only when it points at launcher/bin/pinata-dev.js
-cli/pinata/path-block.ts       the marked PATH block in ~/.zshrc, ~/.bashrc and ~/.bash_profile, added or removed, its body written in UTF-8
+cli/pinata/path-block.ts       setBlock, the marked block writer (latin1 file, UTF-8 body, appended or put first, cut byte for byte); the shell block in ~/.zshrc, ~/.bashrc and ~/.bash_profile: the PATH line and GIT_OPTIONAL_LOCKS=0
+cli/pinata/git-block.ts        the git block at the start of the global git config (GIT_CONFIG_GLOBAL, ~/.gitconfig or the XDG file), including the shipped gitconfig for every repository
+cli/pinata/gitconfig          the static git settings that block includes: core.checkStat=minimal and core.trustctime=false
 ```
 
 ## config/
@@ -164,7 +166,7 @@ backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and t
 
 ```
 container/index.ts             public surface
-container/spec.ts              the container spec: mounts (the workspace root read-write), the install's network, the forwarder's service ports and host, service volumes left out of the hand-over, env (env.set under pinata's variables, the hand-over wait flag), the env.allow names env.set leaves forwarded, labels, the mount table check (no target twice, no mount over the image's paths)
+container/spec.ts              the container spec: mounts (the workspace root read-write), the install's network, the forwarder's service ports and host, service volumes left out of the hand-over, env (GIT_OPTIONAL_LOCKS=0 under env.set, env.set under pinata's variables, the hand-over wait flag), the env.allow names env.set leaves forwarded, labels, the mount table check (no target twice, no mount over the image's paths)
 container/volumes.ts           the volume plan: agent and mounts.volumes names and targets; userVolume names a volume shared by every folder of the state dir
 container/names.ts             container and volume names (agent and shared volumes), the pod and service container names; the install's agent volume name
 container/services.ts          ensureServices and stopServices for the install: one pod on the install's network under the services alias, the service specs, the volume hand-over to each service user, the ready wait with its log tail, decide (fresh, refresh or keep by services hash) and the stop of all services at once; serviceVolumes, the service volumes the config names
@@ -227,7 +229,7 @@ hostpi/tools/git.ts            git user name and email
 ```
 provision/index.ts             public surface
 provision/types.ts             render and sync types
-provision/render.ts            the render dir, its tool files and its host sources (agent dir entries and ~/.agents/skills); one render dir per install under the render lock
+provision/render.ts            the render dir, its tool files (the gitconfig led by the two core keys) and its host sources (agent dir entries and ~/.agents/skills); one render dir per install under the render lock
 provision/status.ts            the sandbox status file tools/status.json from the config-derived RenderInput.status (proxy, resources, volumes, binds, setup, services with their ports)
 provision/tree.ts              filtered copy of host sources, following no link, with one notice for what was left out and one for skipped links
 provision/pool.ts              bounded parallel work

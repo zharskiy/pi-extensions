@@ -6,7 +6,8 @@ import { launcherVersion } from "../../../cli/versions.ts";
 import { exists } from "../../support/temp-dir.ts";
 import { createPinata } from "./support.ts";
 
-const BLOCK = (home: string) => `# pinata begin\nexport PATH='${home}/.local/bin':"$PATH"\n# pinata end\n`;
+const BLOCK = (home: string) =>
+  `# pinata begin\nexport PATH='${home}/.local/bin':"$PATH"\nexport GIT_OPTIONAL_LOCKS=0\n# pinata end\n`;
 
 const BROKEN = ["# pinata begin\n", `${"# pinata begin\nx\n# pinata end\n".repeat(2)}`];
 
@@ -26,7 +27,8 @@ describe("pinata install", () => {
         "ok Registered pinata's extensions with pi",
         "ok Linked pi to the sandbox (~/.local/bin/pi)",
         "ok Linked pinata to this checkout (~/.local/bin/pinata)",
-        "ok Added ~/.local/bin to PATH in ~/.zshrc",
+        "ok Added ~/.local/bin to PATH and GIT_OPTIONAL_LOCKS=0 to ~/.zshrc",
+        "ok Added pinata's git settings to ~/.gitconfig",
         "",
         "Pinata is installed.",
         "  Start:     open a new terminal, then cd <your repo> && pi",
@@ -107,6 +109,22 @@ describe("pinata install", () => {
       expect(await readFile(zshrc, "latin1")).toBe(rc);
     },
   );
+
+  it("upgrades an older one-line block in place in every rc file it finds", async () => {
+    const pinata = await createPinata();
+    const old = "alias ll=ls\n# pinata begin\nexport PATH=x\n# pinata end\nalias la=ls\n";
+    const files = [".zshrc", ".bashrc", ".bash_profile"].map((name) => join(pinata.home, name));
+
+    await Promise.all(files.map((file) => writeFile(file, old)));
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(await Promise.all(files.map((file) => readFile(file, "utf8")))).toEqual(
+      files.map(() => `alias ll=ls\n${BLOCK(pinata.home)}alias la=ls\n`),
+    );
+    expect(pinata.harness.stdout()).toContain(
+      "ok Added ~/.local/bin to PATH and GIT_OPTIONAL_LOCKS=0 to ~/.bash_profile\n",
+    );
+  });
 
   it("writes a non-ASCII home into the PATH block byte for byte", async () => {
     const pinata = await createPinata();

@@ -39,8 +39,9 @@ Pinata never installs, updates or removes pi. Without a host pi, `pinata install
 
 1. Registers the package with host pi as `npm:@zharskiy/pinata@<version>`, the version you installed, so pi loads the extensions of that version; `pi update --extensions` does not move a pinned source.
 2. Links `~/.local/bin/pi` to pinata, after checking it before step 1, so a refusal changes nothing. pi's managed link there is replaced, and `pinata uninstall` puts it back; any other file stops the install.
-3. Puts `~/.local/bin` first on `PATH` with a marked block in `~/.zshrc`, and in `~/.bashrc` and `~/.bash_profile` when they exist. A file with an unpaired or repeated marker line is left as it is, with a line saying so. `pinata uninstall` cuts the block with the newline it added, so the file is as it was. A home path with non-ASCII characters is written in UTF-8.
-4. Runs `pinata init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes` or `CI`; otherwise it runs as `pinata init --yes`, and not at all when the config has a `workspaceRoot` and the VM exists.
+3. Puts `~/.local/bin` first on `PATH` and exports `GIT_OPTIONAL_LOCKS=0` with a marked block in `~/.zshrc`, and in `~/.bashrc` and `~/.bash_profile` when they exist. A file with an unpaired or repeated marker line is left as it is, with a line saying so. `pinata uninstall` cuts the block with the newline it added, so the file is as it was. A home path with non-ASCII characters is written in UTF-8.
+4. Adds a marked block at the start of your global git config (`GIT_CONFIG_GLOBAL`, else `~/.gitconfig`, else `$XDG_CONFIG_HOME/git/config` when only that exists, else a new `~/.gitconfig`) that includes pinata's own file in the package for every repository, holding `core.checkStat=minimal` and `core.trustctime=false`. With the `GIT_OPTIONAL_LOCKS` export, these keep a `git status` on the Mac from rewriting `.git/index` while git in the sandbox works on the same repository. A value you set yourself for either key wins, and so does a `GIT_OPTIONAL_LOCKS` you export after pinata's block. `pinata uninstall` cuts the block the same way; once the package is gone, git ignores the missing file.
+5. Runs `pinata init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes` or `CI`; otherwise it runs as `pinata init --yes`, and not at all when the config has a `workspaceRoot` and the VM exists.
 
 Run again, `pinata install` changes nothing. Open a new terminal afterwards.
 
@@ -157,9 +158,9 @@ In the table, *host pi* is pi's managed install on your Mac, or without one the 
 | `pi --version` | the pi version the sandbox runs, without starting a sandbox |
 | `pi update [target]` | update host pi, its packages or its model catalogs, with host pi on the host |
 | `pi config` | the user resource config, with host pi on the host (-l passes through into the sandbox) |
-| `pinata install [--yes]` | set up pinata's package in host pi, the pi link, PATH and the sandbox VM; needs pi installed on the host, --yes asks nothing |
+| `pinata install [--yes]` | set up pinata's package in host pi, the pi link, PATH, the git settings and the sandbox VM; needs pi installed on the host, --yes asks nothing |
 | `pinata update` | install the latest pinata with npm, then its pinata install --yes |
-| `pinata uninstall [--sandbox]` | remove the sandbox VM, pinata's state, its links, its PATH block and its package in host pi; your config, sessions, pi and colima stay; --sandbox removes only the sandbox VM, the pi link and pinata's state, so pi runs host pi |
+| `pinata uninstall [--sandbox]` | remove the sandbox VM, pinata's state, its links, its shell and git config blocks and its package in host pi; your config, sessions, pi and colima stay; --sandbox removes only the sandbox VM, the pi link and pinata's state, so pi runs host pi |
 | `pinata init [--yes]` | set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings |
 | `pinata status` | runtime, services, container, proxy, image, launches, grants, volumes |
 | `pinata list` | the sandbox VM and the pi sessions it runs, for every folder, without starting it |

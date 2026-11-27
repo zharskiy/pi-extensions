@@ -473,6 +473,27 @@ A name in both `env.allow` and `env.set` takes the `env.set` value; your shell's
 
 Your `env.set` replaces the default, which sets nothing, as a whole map; `pinata config` shows its source as `config`, or `default` without it.
 
+`GIT_OPTIONAL_LOCKS=0` is a default of pinata's, not a fixed value: it is not refused, and an `env.set` value for it replaces pinata's, as does a host value `env.allow` forwards (see [Git settings](#git-settings)).
+
+## Git settings
+
+Git on your Mac and git in the sandbox work on the same `.git` folder. A plain `git status` rewrites `.git/index` when it finds changed file times, and the other side's next write can then fail on `index.lock`. Pinata sets three things on both sides so that a status only reads:
+
+| Setting | On the Mac | In the sandbox |
+|---|---|---|
+| `GIT_OPTIONAL_LOCKS=0` | exported in pinata's block in your shell profile | the container environment, unless `env.set` names it |
+| `core.checkStat=minimal` | your global git config, through pinata's file | the rendered `~/.gitconfig` |
+| `core.trustctime=false` | your global git config, through pinata's file | the rendered `~/.gitconfig` |
+
+On the Mac, `pinata install` (and so `pinata update`) writes them and `pinata uninstall` removes them; `pinata uninstall --sandbox` keeps them. Everything pinata writes lies between a `# pinata begin` and a `# pinata end` line, and the uninstall removes only that.
+
+- The shell profile: the export is the second line of the block that puts `~/.local/bin` on `PATH`, in `~/.zshrc` and in `~/.bashrc` and `~/.bash_profile` when they exist. The block sits at the end of the file, so it overrides a `GIT_OPTIONAL_LOCKS` you export earlier in the file; one you export after the block wins. Only git started from a terminal sees it.
+- The global git config: a block at the start of the file with `[includeIf "gitdir:/"]` and `path = "<package>/launcher/cli/pinata/gitconfig"`, a file in the installed package that holds the two `core` keys. `gitdir:/` matches every repository, worktree and bare repository; outside a repository the keys do not apply, and they matter only with an index. Git takes the last value it reads, so a value you set yourself for either key, before or after the install, wins. The keys reach every git on the Mac, apps started from the Dock included. When the package is removed, git ignores the missing file without an error.
+- The file is `GIT_CONFIG_GLOBAL` when it is set and not empty, else `~/.gitconfig` when it exists, else `$XDG_CONFIG_HOME/git/config` (`~/.config/git/config` when `XDG_CONFIG_HOME` is unset or empty) when that exists, else a new `~/.gitconfig`; this is the file `git config --global` writes. One that is not a regular file, such as `GIT_CONFIG_GLOBAL=/dev/null`, is left alone with a line saying so. The uninstall picks the file the same way, so after you change `GIT_CONFIG_GLOBAL` or create `~/.gitconfig` it looks in the other file, and the block stays in the first; cut it out by hand.
+- A file whose markers do not pair or repeat is left as it is, with a line saying so, and gets no block.
+
+In the sandbox, the rendered `~/.gitconfig` starts with the two `core` keys, before the identity and the glab hosts, and is written at every launch. It is git's global scope, so a repository's own `.git/config` value for either key outranks it, as do `GIT_CONFIG_COUNT` entries you set in `env.set` and `setup` lines that set the keys again.
+
 ## Credentials
 
 ### Derived credentials
