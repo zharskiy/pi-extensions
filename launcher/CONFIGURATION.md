@@ -46,7 +46,7 @@ Connections that are already open stay until they close.
 The file applies to every pi you start in the sandbox, in every folder. There are no profiles, no per-project config, and no project file that adds to it. So:
 
 - `setup` and `services` run in every repository pi starts in. Write each `setup` command so it does nothing, quickly, in a repository it does not apply to, for example by testing for a file first; every session waits for the services' `ready`.
-- A volume in `mounts.volumes` is one volume shared by every repository. Nothing in it stays apart per repository.
+- A volume in `mounts.volumes` is one volume shared by every repository ([Volumes](#volumes)).
 - `egress`, `credentials`, `tls`, `env`, `resources`, `mounts.binds`, the image and your grants are the same in every folder.
 
 ## All keys
@@ -186,16 +186,6 @@ The base image build reaches the network straight from the VM, outside the allow
 
 `node_modules`, `.venv`, `target`, `.gradle` and every other build output folder are ordinary folders in the shared tree: the sandbox reads and writes the copy on your Mac. What an install or a build inside makes is built for Linux, so native modules and binaries from inside may not run on your Mac, nor yours inside. A build that writes very many files there is safe through the [file cache release](#file-cache).
 
-`mounts.autoOverlays` is not a known key: a config that still holds it stops the launch with `config: mounts.autoOverlays is not a known key`. Delete the key from the config.
-
-Volumes named `pinata-cache-…` left in the VM from build output volumes stay there until `pinata restart`, which deletes the VM with every volume in it. To remove only those volumes:
-
-```sh
-docker --context colima-pinata volume ls -q --filter label=pinata.cache-path | xargs docker --context colima-pinata volume rm
-```
-
-Docker keeps a volume that a running session uses.
-
 ### Volumes
 
 Your home inside the sandbox lives in memory, so tool caches are lost when pi exits. `mounts.volumes` keeps chosen folders in volumes:
@@ -216,8 +206,7 @@ Your home inside the sandbox lives in memory, so tool caches are lost when pi ex
 - A target is an absolute path or starts with `~/`, which is the sandbox home `/home/pi`. Write a path in the home with `~/`, not `/home/pi/`.
 - Every entry is a user volume: one volume that every sandbox of yours mounts, whatever the folder. No entry is kept apart per repository.
 - The volume is known by its `name` when set, otherwise by the target as written. Without a `name`, changing the target starts a new, empty volume. A `name` is lowercase letters, digits, `.`, `-` and `_`, and two entries may not share it. An entry whose `name` is the name of a [service volume](#services) mounts that same volume.
-- Your Mac's folder of that name is never mounted. The volume starts empty, unless the entry has a `source`.
-- `source` is a folder of your Mac, an absolute path or one starting with `~/`, that pinata copies into the volume ([below](#copy-a-folder-into-a-volume)).
+- Your Mac's folder of that name is never mounted. The volume starts empty, unless the entry has a `source`: a folder of your Mac, an absolute path or one starting with `~/`, that pinata copies into the volume once ([below](#copy-a-folder-into-a-volume)).
 - An entry may share a folder with a file pinata puts in your home, such as `~/.m2/repository` beside the rendered `~/.m2/settings.xml`. The sandbox waits until each volume, and the home folders above it, belong to the sandbox user before it writes there, and a launch whose hand-over fails stops.
 - The [target rules](#mount-targets) apply.
 
@@ -225,7 +214,7 @@ Every sandbox can write to a user volume, so a bad package written in one folder
 
 A user volume stays until `pinata restart` or the uninstall, which delete it with the VM; the daily cleanup never removes it.
 
-### Copy a folder into a volume
+#### Copy a folder into a volume
 
 An entry with a `source` gets a copy of that folder of your Mac, made once:
 
@@ -233,7 +222,7 @@ An entry with a `source` gets a copy of that folder of your Mac, made once:
 - At launch, after the container is up and its volumes belong to the sandbox user, and before `setup` and pi, pinata looks for the file `.pinata-seeded` at the top of the volume (a link at that name does not count). When it is missing, pinata prints `pinata: copying <source> into the volume at <target>, one time`, copies the folder, writes `.pinata-seeded` last, holding the source's real path, and prints `pinata: copied <source> into the volume at <target>`. When the marker names another folder, as after you change `source`, pinata copies nothing and prints `pinata: warning: the volume at <target> holds a copy of <other folder>, so <source> is not copied into it; delete <target>/.pinata-seeded in the sandbox to copy it`.
 - Pinata writes the archive itself and streams it into `tar` in the sandbox, which writes as the sandbox user. Files are owned by `1000:1000` and keep their permission bits and modification times; setuid, setgid and sticky bits are dropped, and every folder gets read, write and search for its owner. Links are copied as links and never followed. Sockets, fifos, devices, macOS `._*` files, extended attributes, ACLs and file flags are left out. Hard links arrive as separate files.
 - The copy reads only inside the source's real path. Pinata resolves the source again before the copy; when it now leads to another folder, nothing is copied and the warning below names both paths. Every file is opened so that a link anywhere in its path makes the open fail, and a folder that turns into a link during the copy is left out, so nothing outside the source is read.
-- An entry that cannot be read (no permission, gone since the folder was listed, or turned into a link) is left out and the copy goes on; the closing line then ends with `; <n> entries could not be read and were left out`. A file that changes size while it is read is cut or padded with zeros to the size it had when it was opened, and the line ends with `; <n> files changed while they were read`. The marker is written all the same, so delete it to copy again.
+- An entry that cannot be read (no permission, gone since the folder was listed, or turned into a link) is left out and the copy goes on; the closing line then ends with `; <n> entries could not be read and were left out`. A file that changes size while it is read is cut or padded with zeros to the size it had when it was opened, and the line ends with `; <n> files changed while they were read`. The marker is written all the same.
 - Files already in the volume stay. A file, folder or link at the same path as one in the source is replaced; a link there is removed, not written through. Nothing else is deleted.
 - Two launches never copy into one volume at once: the second waits, prints `pinata: waiting for another pi session to finish copying into <target>`, then finds the marker and copies nothing.
 - A copy that fails never stops the launch: a source that is missing, not a folder or resolving elsewhere, `tar` in the sandbox exiting non-zero, an archive that did not reach its end, a marker that could not be written, or a copy interrupted part-way prints `pinata: warning: <source> was not copied into the volume at <target> (<reason>); the next launch tries again`, writes no marker, and pi starts.
@@ -334,7 +323,7 @@ Some things to know:
 | `ready.timeoutSeconds` | How long to wait for `ready.command`, 1 to 3600. | `60` |
 | `memoryGiB`, `shmMiB` | The memory limit and the `/dev/shm` size of the service. | the engine's default |
 
-Paths are absolute, normalised, not `/`, not inside each other and without `:` or `,`, which the container engine reads as separators. The agent's reserved paths do not apply. Two services that mount one volume must run as the same user, and a volume the agent shares through `mounts.volumes` (below) only with services that run as `1000:1000`.
+Paths are absolute, normalised, not `/`, not inside each other and without `:` or `,`, which the container engine reads as separators. The agent's reserved paths do not apply. Two services that mount one volume must run as the same user.
 
 How it works:
 
@@ -351,7 +340,7 @@ How it works:
 
 Some things to know:
 
-- Services start with the first session, so a slow `ready` delays that `pi`. A later session waits only for a service that had exited and starts again.
+- Services start with the first session, so a slow `ready` delays that `pi`.
 - Every session reaches the same services and the same data, in any folder. Two repositories that need different data in one database need different database names or users.
 - A service volume is one volume per pinata state folder, like a `mounts.volumes` entry. Its name is the `name` you give it.
 - The agent sees a service volume only through a `mounts.volumes` entry with the same `name`. Such a volume is shared: every service that mounts it must run as `1000:1000`, the sandbox user's ids, and the config is refused otherwise. The agent owns its files and can write, replace or delete anything the service keeps there.
@@ -685,9 +674,8 @@ A team shares the config by giving everyone the same file: copy it to `~/.pi/age
 - Adds a credential for the gateway, from a host command, and one for the registry, from a variable.
 - Leaves credential derivation on, so `glab`, npm, pip and Maven work as on the host.
 - Points npm at the internal registry with `env.set`, sets `CI`, and raises the memory, process and `/dev/shm` limits of the container.
-- Keeps the npm cache, a fixtures folder and the database's logs in volumes that every session shares.
-- Copies a fixtures folder of your Mac into its volume once (see [below](#seed-a-volume-from-a-folder-of-your-mac)).
-- Runs a database service on port 5432, whose log volume the agent also mounts (see [below](#read-the-logs-of-a-service)).
+- Keeps the npm cache, a fixtures folder and the database's logs in volumes that every session shares, the fixtures volume filled once from a folder of your Mac ([Copy a folder into a volume](#copy-a-folder-into-a-volume)).
+- Runs a database service on port 5432, whose log volume the agent also mounts ([Read the logs of a service](#read-the-logs-of-a-service)).
 
 Replace the `*.example.internal` names with your own hosts and the service with your own, and add the package registries your team uses to `egress.allow`. A Mac without the fixtures folder starts with an empty fixtures volume and a warning.
 
@@ -699,7 +687,7 @@ Each recipe is a part of the one config file; merge it with the keys you already
 
 ### Seed a volume from a folder of your Mac
 
-A volume starts empty. To start the sandbox's Maven repository from the one on your Mac, give its volume a `source`:
+To start the sandbox's Maven repository from the one on your Mac, give its volume a `source`:
 
 ```json
 {
@@ -709,17 +697,7 @@ A volume starts empty. To start the sandbox's Maven repository from the one on y
 }
 ```
 
-The first launch copies `~/.m2/repository` into the volume, artifacts you built locally included, and later launches find the marker and copy nothing. Name `~/.m2/repository`, not `~/.m2`, so `settings.xml` and its credentials stay on your Mac; pinata renders the sandbox's own `~/.m2/settings.xml`. Every session, in any folder, shares the one copy. Delete `~/.m2/repository/.pinata-seeded` inside the sandbox to copy again at the next launch. See [Copy a folder into a volume](#copy-a-folder-into-a-volume).
-
-### Shared package caches
-
-Package caches in user volumes outlive each session and are shared by all your sandboxes, so an install in one repository reuses what another one downloaded:
-
-```json
-{ "mounts": { "volumes": ["~/.npm", "~/.cache/pip"] } }
-```
-
-The volumes start empty and never use your Mac's folders. Every sandbox can write to them, so keep them to package caches. See [Volumes](#volumes).
+Name `~/.m2/repository`, not `~/.m2`, so `settings.xml` and its credentials stay on your Mac; pinata renders the sandbox's own `~/.m2/settings.xml`. When and how the copy is made is in [Copy a folder into a volume](#copy-a-folder-into-a-volume).
 
 ### The GitHub CLI
 
@@ -788,7 +766,7 @@ The command prints `user:token` in base64, as Basic authentication wants it; use
 
 ### Read the logs of a service
 
-A service volume and an entry of `mounts.volumes` with the same `name` are one volume, so the agent can read what the service writes there:
+To let the agent read what a service writes, mount the service's volume in the sandbox too, under the same `name`; the rules for such a shared volume are in [Services](#services):
 
 ```json
 {
@@ -804,8 +782,6 @@ A service volume and an entry of `mounts.volumes` with the same `name` are one v
   ]
 }
 ```
-
-The service runs as `1000:1000`, the sandbox user's ids, so the agent owns the files and can change them. The config is refused if a service that mounts `db-logs` sets another `user`.
 
 ### A JDK in a volume
 

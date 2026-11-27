@@ -467,7 +467,7 @@
               }
             ]
           },
-          "description": "Folders in the container kept in a named volume, one per sandbox VM, mounted read-write and owned by the sandbox user. A string is the volume at that target. No target listed twice (a trailing slash is dropped) or inside another, and no name listed twice."
+          "description": "Folders in the container kept in a named volume, one per pinata state folder and shared by every session of it, mounted read-write and owned by the sandbox user. A string is the volume at that target. No target listed twice (a trailing slash is dropped) or inside another, and no name listed twice."
         },
         "binds": {
           "type": "array",
@@ -568,7 +568,7 @@
                 }
               }
             },
-            "description": "Named volumes, one per sandbox VM, mounted read-write and owned by the service's user; they keep their data until pinata restart."
+            "description": "Named volumes, one per pinata state folder, mounted read-write and owned by the service's user; they keep their data until pinata restart."
           },
           "tmpfs": {
             "type": "array",
