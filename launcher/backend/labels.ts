@@ -2,7 +2,6 @@ export const LABELS = {
   managed: "pinata.managed",
   install: "pinata.install",
   repoHash: "pinata.repo-hash",
-  repoRoot: "pinata.repo-root",
   launchId: "pinata.launch-id",
   imageDigest: "pinata.image-digest",
   relayInputs: "pinata.relay-inputs",

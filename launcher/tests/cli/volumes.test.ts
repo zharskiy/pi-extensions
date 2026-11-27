@@ -28,7 +28,7 @@ const volumeHarness = async () => {
 };
 
 const plantShared = (fake: ReturnType<typeof createFakeBackend>, name: string, install: string) =>
-  fake.backendFor(install).ensureVolume(name, {});
+  fake.backendFor(install).ensureVolume(name);
 
 describe("the sweep and configured volumes", () => {
   it("keeps every configured volume and never counts them as unlabelled", async () => {
@@ -52,7 +52,7 @@ describe("the sweep and configured volumes", () => {
 
     await harness.writeJson(stateLayout(harness.stateDir).repo(sha256Hex(gone)).record, { root: gone });
 
-    await fake.backend.ensureVolume(volume, {});
+    await fake.backend.ensureVolume(volume);
 
     await rm(gone, { recursive: true, force: true });
 

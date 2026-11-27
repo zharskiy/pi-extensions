@@ -63,10 +63,7 @@ describe("the sweep of what is left in the state dir", () => {
 
     await harness.writeJson(files.record, { root, mountRoot });
 
-    await fake.backend.ensureVolume("pinata-agent-volume-root", {
-      [LABELS.repoHash]: hash,
-      [LABELS.repoRoot]: root,
-    });
+    await fake.backend.ensureVolume("pinata-agent-volume-root");
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(await repoRecordOf(harness.stateDir, hash)).toEqual({ root, mountRoot });
@@ -89,10 +86,7 @@ describe("the sweep of what is left in the state dir", () => {
       { host: "kept.test", port: 443, createdAt: 1 },
     ]);
 
-    await fake.backend.ensureVolume("pinata-agent-gone", {
-      [LABELS.repoHash]: hash,
-      [LABELS.repoRoot]: root,
-    });
+    await fake.backend.ensureVolume("pinata-agent-gone");
 
     expect(await sweepOrphans(harness.deps, fake.backend)).toEqual([
       `forgot ${root}, which no longer exists`,

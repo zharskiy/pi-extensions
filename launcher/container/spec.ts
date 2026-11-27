@@ -18,10 +18,11 @@ import {
   LauncherError,
   PI_SESSION_DIR_VARIABLE,
   realOrResolvedSync,
+  repoHash,
 } from "../shared/index.ts";
 import type { HostSessions, Workspace } from "../workspace/index.ts";
 import { containerName } from "./names.ts";
-import { type PlannedVolume, repoLabels, serviceVolumeNames, volumePlan } from "./volumes.ts";
+import { type PlannedVolume, serviceVolumeNames, volumePlan } from "./volumes.ts";
 
 export const HANDOVER_CAPABILITIES = ["CHOWN"];
 
@@ -174,7 +175,7 @@ const renderMounts = (renderDir: string) => [
 
 const baseLabels = (input: ContainerSpecInput) => ({
   [LABELS.role]: "agent",
-  ...repoLabels(input.workspace.repoRoot),
+  [LABELS.repoHash]: repoHash(input.workspace.repoRoot),
   [LABELS.launchId]: input.launchId,
   [LABELS.imageDigest]: input.image.digest,
   ...sessionsLabel(input.hostSessions),

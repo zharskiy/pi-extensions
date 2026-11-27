@@ -69,8 +69,6 @@ export interface ContainerSummary {
 
 export interface VolumeSummary {
   name: string;
-  labels: Record<string, string>;
-  inUse: boolean;
 }
 
 export interface ExecIo {
@@ -219,7 +217,7 @@ export interface Backend {
   inspectContainer(id: string): Promise<ContainerInspect | undefined>;
   containerLogs(id: string, lines: number): Promise<string>;
   exec(spec: ExecSpec, io: ExecIo): Promise<number>;
-  ensureVolume(name: string, labels?: Record<string, string>): Promise<void>;
+  ensureVolume(name: string): Promise<void>;
   listVolumes(): Promise<VolumeSummary[]>;
   removeVolume(name: string): Promise<void>;
   prepareRelay(request: RelayRequest): Promise<string>;

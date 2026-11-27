@@ -58,7 +58,6 @@ describe("buildContainerSpec", () => {
     expect(buildContainerSpec(specInput()).labels).toEqual({
       "pinata.role": "agent",
       "pinata.repo-hash": repoHash,
-      "pinata.repo-root": repoRoot,
       "pinata.launch-id": launchId,
       "pinata.image-digest": "sha256:abc",
       "pinata.session-dir": "sessions.host is off",

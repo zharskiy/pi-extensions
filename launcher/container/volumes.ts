@@ -1,6 +1,6 @@
-import { installIdOf, LABELS } from "../backend/index.ts";
+import { installIdOf } from "../backend/index.ts";
 import { guestPathOf, type SandboxConfig, type ServiceEntry } from "../config/index.ts";
-import { GUEST_PATHS, repoHash } from "../shared/index.ts";
+import { GUEST_PATHS } from "../shared/index.ts";
 import { agentVolumeName, configVolumeName } from "./names.ts";
 
 type VolumeKey = "agent" | "mounts.volumes";
@@ -10,11 +10,6 @@ export interface PlannedVolume {
   target: string;
   key: VolumeKey;
 }
-
-export const repoLabels = (repoRoot: string) => ({
-  [LABELS.repoHash]: repoHash(repoRoot),
-  [LABELS.repoRoot]: repoRoot,
-});
 
 export const configVolumes = (config: SandboxConfig) =>
   config.mounts.volumes.map((entry) => {

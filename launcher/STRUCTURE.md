@@ -168,7 +168,7 @@ backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and t
 ```
 container/index.ts             public surface
 container/spec.ts              the container spec: mounts (the workspace root read-write), the install's network, the forwarder's service ports and host, service volumes left out of the hand-over, env (GIT_OPTIONAL_LOCKS=0 under env.set, env.set under pinata's variables, the hand-over wait flag), the env.allow names env.set leaves forwarded, labels, the mount table check (no target twice, no mount over the image's paths)
-container/volumes.ts           the volume plan: agent and mounts.volumes names and targets; userVolume names a volume shared by every folder of the state dir
+container/volumes.ts           the volume plan: agent and mounts.volumes names and targets; the service volume names left out of the hand-over
 container/names.ts             container and volume names (agent and shared volumes), the pod and service container names; the install's agent volume name
 container/services.ts          ensureServices and stopServices for the install: one pod on the install's network under the services alias, the service specs, the volume hand-over to each service user, the ready wait with its log tail, decide (fresh, refresh or keep by services hash) and the stop of all services at once; serviceVolumes, the service volumes the config names
 container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, volume hand-over (chownRoots, also for the pod) (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker and the forwarder's status, the exited-during-startup error

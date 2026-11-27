@@ -572,10 +572,10 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     },
     containerLogs: async (id, lines) => logsOf(id, lines),
     exec: runExec,
-    ensureVolume: async (name, labels = {}) => {
+    ensureVolume: async (name) => {
       volumeLabels.set(
         name,
-        volumeLabels.get(name) ?? { ...labels, [LABELS.managed]: "true", [LABELS.install]: install },
+        volumeLabels.get(name) ?? { [LABELS.managed]: "true", [LABELS.install]: install },
       );
 
       volumes.add(name);
@@ -583,11 +583,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     listVolumes: async () =>
       [...volumes]
         .filter((name) => volumeLabels.get(name)?.[LABELS.install] === install)
-        .map((name) => ({
-          name,
-          labels: volumeLabels.get(name) ?? {},
-          inUse: volumeInUse(name),
-        })),
+        .map((name) => ({ name })),
     removeVolume: async (name) => {
       if (volumeInUse(name)) {
         throw new LauncherError(

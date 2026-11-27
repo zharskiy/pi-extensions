@@ -64,7 +64,7 @@ export const runBackendConformance = (
   const { describe, it, expect, beforeAll, afterAll } = hooks;
   const runId = randomBytes(4).toString("hex");
   const prefix = `pinata-conformance-${runId}`;
-  const volumes = [`${prefix}-a`, `${prefix}-b`, `${prefix}-mounted`, `${prefix}-owned`, `${prefix}-listed`];
+  const volumes = [`${prefix}-a`, `${prefix}-b`, `${prefix}-mounted`, `${prefix}-owned`];
   const repos = [randomHash(), randomHash(), randomHash(), randomHash(), randomHash()];
   const state: { target?: ConformanceTarget } = {};
 
@@ -299,43 +299,20 @@ export const runBackendConformance = (
       await expect(backend().removeVolume(volumes[0] ?? "")).resolves.toBeUndefined();
     });
 
-    it("lists a managed volume with the labels it was created with, keeping them when ensured again", async () => {
+    it("lists a managed volume until it is removed, also when ensured twice", async () => {
       const owned = volumes[3] ?? "";
-      const owner = { [LABELS.repoHash]: repos[0] ?? "", [LABELS.repoRoot]: "/work/owned" };
 
-      await backend().ensureVolume(owned, owner);
+      await backend().ensureVolume(owned);
 
-      await backend().ensureVolume(owned, { [LABELS.repoRoot]: "/work/other" });
+      await backend().ensureVolume(owned);
 
-      const listed = (await backend().listVolumes()).find((volume) => volume.name === owned);
-
-      expect(listed?.labels).toEqual(expect.objectContaining({ ...owner, [LABELS.managed]: "true" }));
-      expect(listed?.inUse).toBe(false);
+      expect((await backend().listVolumes()).filter((volume) => volume.name === owned)).toEqual([
+        { name: owned },
+      ]);
 
       await backend().removeVolume(owned);
 
       expect((await backend().listVolumes()).map((volume) => volume.name)).not.toContain(owned);
-    });
-
-    it("reports a volume mounted by a container as in use until the container is removed", async () => {
-      const mounted = volumes[4] ?? "";
-
-      await backend().pullImage(target().pullableImage);
-
-      await backend().ensureVolume(mounted);
-
-      const created = await backend().createContainer({
-        ...specFor("in-use", {}),
-        mounts: [{ kind: "volume", source: mounted, target: "/data", readOnly: false }],
-      });
-      const inUse = async () =>
-        (await backend().listVolumes()).find((volume) => volume.name === mounted)?.inUse;
-
-      expect(await inUse()).toBe(true);
-
-      await backend().removeContainer(created.id);
-
-      expect(await inUse()).toBe(false);
     });
 
     it("passes exec stdin through to the command", async () => {

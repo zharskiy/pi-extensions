@@ -302,10 +302,7 @@ describe("the sweep", () => {
 
     await harness.writeJson(files.record, { root: gone });
 
-    await fake.backend.ensureVolume("pinata-agent-gone", {
-      [LABELS.repoHash]: hash,
-      [LABELS.repoRoot]: gone,
-    });
+    await fake.backend.ensureVolume("pinata-agent-gone");
 
     await rm(gone, { recursive: true, force: true });
 
@@ -387,23 +384,6 @@ describe("the sweep", () => {
     expect(harness.stderr()).not.toContain("unreachable");
   });
 
-  it("removes no volume in the daily collection, also one whose repository no longer exists on disk", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const gone = await tempDir("gone-repo");
-
-    await fake.backend.ensureVolume("pinata-agent-gone", {
-      [LABELS.repoHash]: sha256Hex(gone),
-      [LABELS.repoRoot]: gone,
-    });
-
-    await rm(gone, { recursive: true, force: true });
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pinata-agent-gone")).toBe(true);
-    expect(harness.stdout()).not.toContain("removed volume");
-  });
-
   it("keeps the pi folder every folder's sandbox shares when the repository that made it is gone", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
@@ -431,14 +411,15 @@ describe("the sweep", () => {
     expect(harness.stdout()).not.toContain("removed volume");
   });
 
-  it("keeps a volume without a repository label", async () => {
+  it("removes no volume in the daily collection", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await fake.backend.ensureVolume("pinata-agent-unlabelled");
+    await fake.backend.ensureVolume("pinata-agent-other");
 
     expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pinata-agent-unlabelled")).toBe(true);
+    expect(fake.volumes.has("pinata-agent-other")).toBe(true);
+    expect(harness.stdout()).not.toContain("removed volume");
   });
 });
 

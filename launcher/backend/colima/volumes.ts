@@ -6,56 +6,27 @@ import { type EngineClient, segment } from "./engine-client.ts";
 
 interface EngineVolume {
   Name: string;
-  Labels?: Record<string, string> | null;
-}
-
-interface EngineMount {
-  Type?: string;
-  Name?: string;
 }
 
 export const createVolumeOperations = (client: EngineClient, install: string) => {
   const owned = { [LABELS.managed]: "true", [LABELS.install]: install };
 
-  const ensureVolume = async (name: string, labels: Record<string, string> = {}) => {
+  const ensureVolume = async (name: string) => {
     await client.call({
       method: "POST",
       path: "/volumes/create",
-      json: { Name: name, Labels: { ...labels, ...owned } },
+      json: { Name: name, Labels: owned },
     });
-  };
-
-  const mountedVolumes = async () => {
-    const containers = await client.json<Array<{ Mounts?: EngineMount[] | null }>>({
-      method: "GET",
-      path: "/containers/json",
-      query: { all: true },
-    });
-
-    return new Set(
-      containers.flatMap((container) =>
-        (container.Mounts ?? []).flatMap((mount) =>
-          mount.Type === "volume" && mount.Name !== undefined ? [mount.Name] : [],
-        ),
-      ),
-    );
   };
 
   const listVolumes = async (): Promise<VolumeSummary[]> => {
-    const [listed, mounted] = await Promise.all([
-      client.json<{ Volumes?: EngineVolume[] | null }>({
-        method: "GET",
-        path: "/volumes",
-        query: { filters: labelFilters(owned) },
-      }),
-      mountedVolumes(),
-    ]);
+    const listed = await client.json<{ Volumes?: EngineVolume[] | null }>({
+      method: "GET",
+      path: "/volumes",
+      query: { filters: labelFilters(owned) },
+    });
 
-    return (listed.Volumes ?? []).map((volume) => ({
-      name: volume.Name,
-      labels: volume.Labels ?? {},
-      inUse: mounted.has(volume.Name),
-    }));
+    return (listed.Volumes ?? []).map((volume) => ({ name: volume.Name }));
   };
 
   const removeVolume = async (name: string) => {
