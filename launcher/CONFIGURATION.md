@@ -59,7 +59,7 @@ The file applies to every pi you start in the sandbox, in every folder. There ar
 | `image.packages` | Debian packages to add to the image. | none |
 | `image.npmGlobal` | npm packages to install globally, as `name@version`. | none |
 | `image.dockerfile` | A file of Dockerfile lines to add to the image. | none |
-| `image.reference` and `image.digest` | A prebuilt image to pull instead of building one. | none |
+| `image.reference` | A prebuilt image to pull by its digest instead of building one. | none |
 | `credentials.derive.enabled` | Whether credentials are read from your host files. | `true` |
 | `credentials.derive.hosts` | Read credentials only for these hosts. | every host |
 | `credentials.rules` | Credentials you define by hand. | `[]` |
@@ -176,7 +176,7 @@ These keys add one layer on top of that image:
 
 The layer is rebuilt only when these inputs change.
 
-`image.reference` and `image.digest` go together. With both set, pinata pulls that image by its digest (`sha256:` and 64 hex digits) instead of building its own. The registry must allow anonymous pulls. The layer above still builds on top.
+`image.reference` names a prebuilt image with its digest, `name@sha256:<64 hex digits>` (`registry.example.internal/pinata:1@sha256:…`), and pinata pulls that image by the digest instead of building its own. A tag before the `@` is allowed and ignored: the pull goes by the digest. A reference without `@sha256:` is a config error. The registry must allow anonymous pulls. The layer above still builds on top.
 
 The base image build reaches the network straight from the VM, outside the allow-list, through your [parent proxy](#parent-proxy) when one is set. So does the layer when `image.packages`, `image.npmGlobal` or `image.dockerfile` is set; without them it builds with no network. Pinata starts these builds, not the agent.
 

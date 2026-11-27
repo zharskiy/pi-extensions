@@ -4,6 +4,7 @@ export { PROXY_ALIAS as GUEST_PROXY_HOST, RELAY_LISTEN_PORT as GUEST_PROXY_PORT 
 export { RELAY_PREAMBLE_VARIABLE, RELAY_SCRIPT } from "./colima/relay-script.ts";
 export { engineUnreachable } from "./colima/vm.ts";
 export { execCapture } from "./exec-capture.ts";
+export { pinnedImageOf } from "./image-reference.ts";
 export { installIdOf, networkName, relayName, SERVICES_ALIAS } from "./install.ts";
 export { isSession, LABELS, roleOf } from "./labels.ts";
 export type {

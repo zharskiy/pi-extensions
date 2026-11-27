@@ -130,7 +130,7 @@ describe("ensureBuiltImage", () => {
   it("pullPinnedImage pulls the pinned digest and never builds", async () => {
     const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
-    const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
+    const config = sandboxConfig({ image: { reference: `${reference}@sha256:pinned` } });
     const result = await pullPinnedImage(
       { backend: fake.backend, config, stateDir: await tempDir() },
       reference,
@@ -146,7 +146,7 @@ describe("ensureBuiltImage", () => {
     const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const fake = createFakeBackend();
     const backend = { ...fake.backend, pullImage: async () => ({ id: "sha256:x", digest: "sha256:other" }) };
-    const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
+    const config = sandboxConfig({ image: { reference: `${reference}@sha256:pinned` } });
 
     await expect(
       pullPinnedImage({ backend, config, stateDir: await tempDir() }, reference, "sha256:pinned"),
@@ -320,7 +320,7 @@ describe("recordedImage", () => {
       id: "sha256:image-built-1",
     });
     const reference = "registry.corp.example/pi:1";
-    const pinnedConfig = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
+    const pinnedConfig = sandboxConfig({ image: { reference: `${reference}@sha256:pinned` } });
 
     expect(await recordedImage(stateDir, pinnedConfig)).toBeUndefined();
 

@@ -7,7 +7,7 @@ const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "::1"];
 const credentialsRefused = () =>
   new LauncherError(
     "image: the parent proxy needs credentials, and an image build cannot use them without writing them into the build",
-    "build on a network that needs no proxy credentials; a prebuilt image (image.reference and image.digest) avoids the build only when image.packages, image.npmGlobal and image.dockerfile are unset",
+    "build on a network that needs no proxy credentials; a prebuilt image (image.reference) avoids the build only when image.packages, image.npmGlobal and image.dockerfile are unset",
   );
 
 const urlHost = (host: string) => {

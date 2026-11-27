@@ -101,7 +101,7 @@ const HANDOVER_HINT = "run pinata doctor, and check the targets in mounts.volume
 
 const STARTUP_HINT = "run pinata doctor";
 
-const PINNED_IMAGE_HINT = "the image is pinned by image.digest and may predate this pinata version";
+const PINNED_IMAGE_HINT = "the image is pinned by image.reference and may predate this pinata version";
 
 const handOverVolumes = async (backend: Backend, id: string, spec: LauncherContainerSpec) => {
   if (spec.ownedPaths.length === 0) {

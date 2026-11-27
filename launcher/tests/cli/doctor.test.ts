@@ -1404,6 +1404,20 @@ describe("pinata doctor on the host pi", () => {
     });
   });
 
+  it("says the sandbox image is pinned when image.reference is set", async () => {
+    const { found } = await hostPiCheck(async (harness) => {
+      await writeManagedPi(harness.hostAgentDir, "1.6.0");
+      await harness.writeJson(harness.userConfigFile, {
+        image: { reference: `registry.example.test/pi:1@sha256:${"b".repeat(64)}` },
+      });
+    });
+
+    expect(found).toMatchObject({
+      status: "ok",
+      detail: "1.6.0 at ~/.pi/agent/bin/pi; the sandbox image is pinned by image.reference",
+    });
+  });
+
   it("warns when the managed pi is older than the pi the launcher is tested with", async () => {
     const { found } = await hostPiCheck(async (harness) => {
       await writeManagedPi(harness.hostAgentDir, "1.0.0");

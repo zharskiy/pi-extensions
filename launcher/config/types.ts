@@ -42,7 +42,6 @@ interface EgressConfig {
 
 interface ImageConfig {
   reference?: string;
-  digest?: string;
   packages?: string[];
   npmGlobal?: string[];
   dockerfile?: string;

@@ -276,7 +276,7 @@ const sandboxPiVersion = async (deps: CliDeps) => {
   const pi = await requireJobPi(deps);
   const { image } = (await loadEffectiveConfig({ env: deps.env, home: deps.home })).config;
 
-  if (image.reference !== undefined && image.digest !== undefined) {
+  if (image.reference !== undefined) {
     return undefined;
   }
 

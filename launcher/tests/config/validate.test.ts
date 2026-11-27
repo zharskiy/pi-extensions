@@ -5,7 +5,7 @@ describe("validateConfig", () => {
   it("accepts a complete config and returns it", () => {
     const config = {
       $schema: "../schema/sandbox-config.schema.json",
-      image: { reference: "ghcr.io/acme/pi:1", digest: `sha256:${"a".repeat(64)}` },
+      image: { reference: `ghcr.io/acme/pi:1@sha256:${"a".repeat(64)}` },
       egress: {
         allow: ["github.com", "*.acme.test", "git.acme.test:2222", "*.acme.test:8443"],
       },
@@ -52,8 +52,11 @@ describe("validateConfig", () => {
     );
     expect(configProblem({ resources: { cpus: 0 } })).toBe("config: resources.cpus must be greater than 0");
     expect(configProblem({ ssh: { agent: true } })).toBe("config: ssh is not a known key");
-    expect(configProblem({ image: { digest: "latest" } })).toBe(
-      "config: image.digest must look like sha256:<64 hex digits>",
+    expect(configProblem({ image: { reference: "ghcr.io/acme/pi@latest" } })).toBe(
+      "config: image.reference must carry the digest it is pulled by, as name@sha256:<64 hex digits>",
+    );
+    expect(configProblem({ image: { digest: `sha256:${"a".repeat(64)}` } })).toBe(
+      "config: image.digest is not a known key",
     );
     expect(configProblem({ workspaceRoot: "relative" })).toBe(
       "config: workspaceRoot relative must be an absolute path or start with ~/",

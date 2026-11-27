@@ -174,6 +174,20 @@ describe("pinata status", () => {
       "",
     ]);
   });
+
+  it("shows a pinned image by its name and the digest its reference carries", async () => {
+    const fake = createFakeBackend();
+    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
+    const harness = await createHarness({ backend: () => down });
+    const digest = `sha256:${"b".repeat(64)}`;
+
+    await harness.writeJson(harness.userConfigFile, {
+      image: { reference: `registry.example.test/pi:1@${digest}` },
+    });
+
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toContain(`  Image:     registry.example.test/pi:1 ${digest}\n`);
+  });
 });
 
 describe("pinata config", () => {

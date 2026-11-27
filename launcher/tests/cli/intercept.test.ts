@@ -498,7 +498,7 @@ describe("pi commands that start no session", () => {
     const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(harness.userConfigFile, {
-      image: { reference: "registry.example.test/pinata:1", digest: PINNED },
+      image: { reference: `registry.example.test/pinata:1@${PINNED}` },
     });
 
     expect(await run(["--version"], harness.deps)).toBe(0);

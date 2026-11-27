@@ -5,6 +5,7 @@ import {
   installIdOf,
   isSession,
   LABELS,
+  pinnedImageOf,
   roleOf,
 } from "../../backend/index.ts";
 import { agentVolumeName, installServices, mountedVolumes } from "../../container/index.ts";
@@ -112,8 +113,9 @@ const proxyRow = async (deps: CliDeps, context: LaunchContext): Promise<Row> => 
 const imageRow = async (context: LaunchContext): Promise<Row> => {
   const { image } = context.effective.config;
   const record = await recordedImage(context.stateDir, context.effective.config);
-  const reference = record?.reference ?? image.reference ?? "pinata-base:local";
-  const digest = image.digest ?? record?.digest;
+  const pinned = image.reference === undefined ? undefined : pinnedImageOf(image.reference);
+  const reference = record?.reference ?? pinned?.name ?? "pinata-base:local";
+  const digest = pinned?.digest ?? record?.digest;
 
   return ["Image", digest === undefined ? `${reference}, not built yet` : `${reference} ${digest}`];
 };

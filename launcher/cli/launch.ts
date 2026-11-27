@@ -387,7 +387,7 @@ const prepareContainer = async (
       backend,
       spec: built,
       afterCreate: (created) => probeSessionsShare(backend, created, sessions),
-      pinnedImage: context.effective.config.image.digest !== undefined,
+      pinnedImage: context.effective.config.image.reference !== undefined,
     }),
   );
 

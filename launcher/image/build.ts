@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Backend } from "../backend/index.ts";
+import { type Backend, pinnedImageOf } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import { errorMessage, LauncherError, stableHash } from "../shared/index.ts";
 import { buildInContext, imageAsset, reusableImage } from "./context.ts";
@@ -74,10 +74,10 @@ const inputsHash = async (input: EnsureImageInput) => {
 
 export const recordedImage = async (stateDir: string, config: SandboxConfig) => {
   const base = await readBaseRecord(stateDir);
-  const { reference = BASE_TAG, digest } = config.image;
-  const current = digest === undefined ? base?.inputsHash !== PINNED : base?.digest === digest;
+  const pinned = config.image.reference === undefined ? undefined : pinnedImageOf(config.image.reference);
+  const current = pinned === undefined ? base?.inputsHash !== PINNED : base?.digest === pinned.digest;
 
-  return base === undefined || !current ? undefined : { reference, ...base };
+  return base === undefined || !current ? undefined : { reference: pinned?.name ?? BASE_TAG, ...base };
 };
 
 const reusableBuild = (backend: Backend, base: BaseRecord | undefined, hash: string) =>

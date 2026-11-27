@@ -342,7 +342,7 @@ describe("volumes the sandbox writes", () => {
       hint: "the share hint",
     });
     expect(await failing(true)).toMatchObject({
-      hint: "the share hint; the image is pinned by image.digest and may predate this pinata version",
+      hint: "the share hint; the image is pinned by image.reference and may predate this pinata version",
     });
   });
 

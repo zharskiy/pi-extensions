@@ -140,7 +140,7 @@ workspace/git/layout.ts        the nearest folder with a .git entry, and the git
 backend/index.ts               public surface
 backend/types.ts               the Backend contract with its VM
 backend/labels.ts              every pinata.* label key, the container roles and isSession
-backend/image-reference.ts     image reference parsing
+backend/image-reference.ts     image reference parsing, and the name and digest of a pinned reference
 backend/install.ts             the install id, the install's network and relay names, and the services alias
 backend/exec-capture.ts        a non-tty exec with collected output
 backend/vm-size.ts             the VM size against the vm config: what differs, a disk below the current one, the size text

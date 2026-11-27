@@ -15,14 +15,8 @@
       "properties": {
         "reference": {
           "type": "string",
-          "minLength": 1,
-          "pattern": "\\S",
-          "description": "A prebuilt image pulled by image.digest; set both or neither. Without them the image is built here."
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^sha256:[0-9a-f]{64}$",
-          "description": "The digest image.reference is pulled by; set both or neither."
+          "pattern": "^[^@\\s]+@sha256:[0-9a-f]{64}$",
+          "description": "A prebuilt image pulled by the digest it carries, name@sha256:<64 hex digits>; a tag before the @ is ignored. Without it the image is built here."
         },
         "packages": {
           "type": "array",
@@ -45,10 +39,6 @@
           "pattern": "^(/|~$|~/)",
           "description": "Absolute path (or ~/ path) of a file with Dockerfile lines, without FROM, appended to the image layer and run as root."
         }
-      },
-      "dependentRequired": {
-        "reference": ["digest"],
-        "digest": ["reference"]
       }
     },
     "credentials": {

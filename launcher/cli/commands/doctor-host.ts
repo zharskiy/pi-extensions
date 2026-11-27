@@ -59,9 +59,9 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
   }
 
   const image =
-    context.effective.config.image.digest === undefined
+    context.effective.config.image.reference === undefined
       ? "the sandbox runs the same version"
-      : "the sandbox image is pinned by image.digest";
+      : "the sandbox image is pinned by image.reference";
 
   return passed(`${job.version} at ${job.location}; ${image}`);
 };

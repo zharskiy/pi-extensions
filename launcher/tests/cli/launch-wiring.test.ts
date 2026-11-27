@@ -63,7 +63,7 @@ describe("pi launch wiring", () => {
           },
         ],
       },
-      image: { reference: "registry.example.test/pinata:1", digest: PINNED },
+      image: { reference: `registry.example.test/pinata:1@${PINNED}` },
     });
 
     expect(await run([], harness.deps)).toBe(0);
@@ -80,7 +80,7 @@ describe("pi launch wiring", () => {
     });
 
     await harness.writeJson(harness.userConfigFile, {
-      image: { reference: "registry.example.test/pinata:1", digest: PINNED },
+      image: { reference: `registry.example.test/pinata:1@${PINNED}` },
     });
 
     expect(await run([], harness.deps)).toBe(0);
