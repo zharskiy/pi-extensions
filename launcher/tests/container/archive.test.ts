@@ -4,6 +4,7 @@ import {
   lstat,
   mkdir,
   open,
+  readdir,
   readFile,
   readlink,
   realpath,
@@ -20,9 +21,12 @@ import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { FILE_FLAGS, numericField, sourceArchive } from "../../container/archive.ts";
+import { extractCommand } from "../../container/seed.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
 const HOST_TAR = "/usr/bin/tar";
+
+const BLOCK = 512;
 
 const LONG_FOLDER = "a-folder-whose-name-is-long-enough".repeat(3);
 
@@ -53,8 +57,34 @@ const listed = (archive: Buffer) =>
     .filter((line) => line !== "")
     .sort();
 
-const listedVerbose = (archive: Buffer) =>
-  execFileSync(HOST_TAR, ["-t", "-v", "-f", "-"], { input: archive }).toString();
+const isGnuTar = execFileSync(HOST_TAR, ["--version"]).toString().startsWith("tar (GNU tar)");
+
+const textField = (block: Buffer, offset: number, length: number) =>
+  block
+    .subarray(offset, offset + length)
+    .toString("ascii")
+    .replace(/\0.*$/s, "");
+
+const headersOf = (archive: Buffer, offset = 0): Buffer[] => {
+  const block = archive.subarray(offset, offset + BLOCK);
+
+  if (block.length < BLOCK || block.every((byte) => byte === 0)) {
+    return [];
+  }
+
+  const size = Number.parseInt(textField(block, 124, 12), 8);
+  const next = offset + BLOCK + Math.ceil(size / BLOCK) * BLOCK;
+
+  return [block, ...headersOf(archive, next)];
+};
+
+const ownersOf = (archive: Buffer) =>
+  headersOf(archive).map((block) => ({
+    uid: Number.parseInt(textField(block, 108, 8), 8),
+    gid: Number.parseInt(textField(block, 116, 8), 8),
+    user: textField(block, 265, 32),
+    group: textField(block, 297, 32),
+  }));
 
 const extracted = async (archive: Buffer) => {
   const into = await realTemp("archive-out");
@@ -64,11 +94,21 @@ const extracted = async (archive: Buffer) => {
   return into;
 };
 
+const extractedAsInTheSandbox = (archive: Buffer, into: string) => {
+  const [, ...args] = extractCommand(into);
+
+  execFileSync(HOST_TAR, args, { input: archive });
+};
+
+const archiveOf = async (root: string) => collected(sourceArchive(root).stream);
+
 const modeOf = async (path: string) => (await lstat(path)).mode & 0o777;
 
 const BIG = Buffer.alloc(2 * 1024 * 1024, 7);
 
-describe("sourceArchive, read by the Mac's tar", () => {
+const PI_OWNER = { uid: 1000, gid: 1000, user: "pi", group: "pi" };
+
+describe("sourceArchive, read by the host's tar", () => {
   it("carries folders, files and links with long names, permission bits, mtimes and the pi owner", async () => {
     const root = await realTemp("archive-src");
     const deep = join(root, LONG_FOLDER, LONG_FOLDER);
@@ -106,6 +146,7 @@ describe("sourceArchive, read by the Mac's tar", () => {
       const bytes = await collected(archive.stream);
       const out = await extracted(bytes);
       const deepOut = join(out, LONG_FOLDER, LONG_FOLDER);
+      const owners = ownersOf(bytes);
 
       expect(archive.complete()).toBe(true);
       expect(archive.tally).toEqual({ leftOut: 0, changed: 0 });
@@ -123,7 +164,7 @@ describe("sourceArchive, read by the Mac's tar", () => {
           "short",
         ].sort(),
       );
-      expect(listedVerbose(bytes)).toMatch(/ pi +pi /);
+      expect(owners).toEqual(owners.map(() => PI_OWNER));
       expect(await readFile(join(deepOut, "lib.jar"), "utf8")).toBe("jar");
       expect(await readlink(join(out, "short"))).toBe("run.sh");
       expect(await readlink(join(out, "far"))).toBe(LONG_TARGET);
@@ -186,46 +227,49 @@ describe("sourceArchive, read by the Mac's tar", () => {
     }
   });
 
-  it("counts a file that vanished and a folder and a file replaced by links after the listing, and follows neither", async () => {
-    const parent = await realTemp("archive-swap");
-    const root = join(parent, "src");
-    const outside = join(parent, "outside");
+  it.skipIf(process.platform !== "darwin")(
+    "counts a file that vanished and a folder and a file replaced by links after the listing, and follows neither",
+    async () => {
+      const parent = await realTemp("archive-swap");
+      const root = join(parent, "src");
+      const outside = join(parent, "outside");
 
-    await mkdir(join(root, "b-folder"), { recursive: true });
+      await mkdir(join(root, "b-folder"), { recursive: true });
 
-    await mkdir(outside);
+      await mkdir(outside);
 
-    await writeFile(join(outside, "secret"), "outside");
+      await writeFile(join(outside, "secret"), "outside");
 
-    await writeFile(join(root, "a-big"), BIG);
+      await writeFile(join(root, "a-big"), BIG);
 
-    await writeFile(join(root, "b-folder", "inside"), "i");
+      await writeFile(join(root, "b-folder", "inside"), "i");
 
-    await writeFile(join(root, "c-file"), "c");
+      await writeFile(join(root, "c-file"), "c");
 
-    await writeFile(join(root, "d-gone"), "d");
+      await writeFile(join(root, "d-gone"), "d");
 
-    const archive = sourceArchive(root);
+      const archive = sourceArchive(root);
 
-    await blocked(archive.stream);
+      await blocked(archive.stream);
 
-    await rename(join(root, "b-folder"), join(parent, "moved"));
+      await rename(join(root, "b-folder"), join(parent, "moved"));
 
-    await symlink(outside, join(root, "b-folder"));
+      await symlink(outside, join(root, "b-folder"));
 
-    await rm(join(root, "c-file"));
+      await rm(join(root, "c-file"));
 
-    await symlink(join(outside, "secret"), join(root, "c-file"));
+      await symlink(join(outside, "secret"), join(root, "c-file"));
 
-    await rm(join(root, "d-gone"));
+      await rm(join(root, "d-gone"));
 
-    const bytes = await collected(archive.stream);
+      const bytes = await collected(archive.stream);
 
-    expect(archive.complete()).toBe(true);
-    expect(archive.tally).toEqual({ leftOut: 3, changed: 0 });
-    expect(listed(bytes)).toEqual(["a-big"]);
-    expect(bytes.includes(Buffer.from("outside"))).toBe(false);
-  });
+      expect(archive.complete()).toBe(true);
+      expect(archive.tally).toEqual({ leftOut: 3, changed: 0 });
+      expect(listed(bytes)).toEqual(["a-big"]);
+      expect(bytes.includes(Buffer.from("outside"))).toBe(false);
+    },
+  );
 
   it("pads a file that shrinks while it is read to the size in its header and counts it", async () => {
     const root = await realTemp("archive-src");
@@ -263,7 +307,7 @@ describe("sourceArchive, read by the Mac's tar", () => {
     expect(archive.complete()).toBe(false);
   });
 
-  it("opens no file through a linked parent folder", async () => {
+  it.skipIf(process.platform !== "darwin")("opens no file through a linked parent folder", async () => {
     const parent = await realTemp("archive-open");
 
     await mkdir(join(parent, "real"));
@@ -278,5 +322,97 @@ describe("sourceArchive, read by the Mac's tar", () => {
 
     await expect(open(join(parent, "linked", "file"), FILE_FLAGS)).rejects.toMatchObject({ code: "ELOOP" });
     await expect(open(join(parent, "linked"), FILE_FLAGS)).rejects.toMatchObject({ code: "ELOOP" });
+  });
+});
+
+describe.skipIf(!isGnuTar)("sourceArchive, extracted by GNU tar with the sandbox's arguments", () => {
+  it("replaces a link to an outside folder where a folder member goes and writes nothing through it", async () => {
+    const root = await realTemp("archive-src");
+    const into = await realTemp("archive-out");
+    const outside = await realTemp("archive-outside");
+
+    await mkdir(join(root, "lib", "inner"), { recursive: true });
+
+    await writeFile(join(root, "lib", "inner", "file"), "inside");
+
+    await symlink(outside, join(into, "lib"));
+
+    extractedAsInTheSandbox(await archiveOf(root), into);
+
+    expect((await lstat(join(into, "lib"))).isDirectory()).toBe(true);
+    expect(await readFile(join(into, "lib", "inner", "file"), "utf8")).toBe("inside");
+    expect(await readdir(outside)).toEqual([]);
+  });
+
+  it("replaces a link to an outside file at a file member's name and leaves that file untouched", async () => {
+    const root = await realTemp("archive-src");
+    const into = await realTemp("archive-out");
+    const outside = await realTemp("archive-outside");
+
+    await writeFile(join(root, "file"), "inside");
+
+    await writeFile(join(outside, "secret"), "outside");
+
+    await symlink(join(outside, "secret"), join(into, "file"));
+
+    extractedAsInTheSandbox(await archiveOf(root), into);
+
+    expect((await lstat(join(into, "file"))).isFile()).toBe(true);
+    expect(await readFile(join(into, "file"), "utf8")).toBe("inside");
+    expect(await readFile(join(outside, "secret"), "utf8")).toBe("outside");
+  });
+
+  it("extracts over its own earlier result, into a folder whose source had no owner write bit", async () => {
+    const root = await realTemp("archive-src");
+    const into = await realTemp("archive-out");
+
+    await mkdir(join(root, "locked"));
+
+    await writeFile(join(root, "locked", "inside"), "first");
+
+    await symlink("inside", join(root, "locked", "short"));
+
+    await chmod(join(root, "locked"), 0o555);
+
+    try {
+      extractedAsInTheSandbox(await archiveOf(root), into);
+
+      await chmod(join(root, "locked"), 0o755);
+
+      await writeFile(join(root, "locked", "inside"), "second");
+
+      await chmod(join(root, "locked"), 0o555);
+
+      extractedAsInTheSandbox(await archiveOf(root), into);
+
+      expect(await readFile(join(into, "locked", "inside"), "utf8")).toBe("second");
+      expect(await readlink(join(into, "locked", "short"))).toBe("inside");
+      expect((await modeOf(join(into, "locked"))) & 0o700).toBe(0o700);
+    } finally {
+      await chmod(join(root, "locked"), 0o755);
+    }
+  });
+
+  it("restores names and a link target longer than 100 bytes and an mtime past the octal field", async () => {
+    const root = await realTemp("archive-src");
+    const into = await realTemp("archive-out");
+    const deep = join(root, LONG_FOLDER, LONG_FOLDER);
+    const far = 9_000_000_000;
+
+    await mkdir(deep, { recursive: true });
+
+    await writeFile(join(deep, "lib.jar"), "jar");
+
+    await symlink(LONG_TARGET, join(root, "far"));
+
+    await writeFile(join(root, "future"), "f");
+
+    await utimes(join(root, "future"), far, far);
+
+    extractedAsInTheSandbox(await archiveOf(root), into);
+
+    expect(await readFile(join(into, LONG_FOLDER, LONG_FOLDER, "lib.jar"), "utf8")).toBe("jar");
+    expect(await readlink(join(into, "far"))).toBe(LONG_TARGET);
+    expect((await stat(join(into, "future"))).mtimeMs).toBe(far * 1000);
   });
 });
