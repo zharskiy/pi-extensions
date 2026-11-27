@@ -138,6 +138,7 @@ const runSeeds = async (sandbox: Sandbox, seeds: VolumeSeed[], overrides: Partia
     containerId: sandbox.id,
     stateDir,
     seeds,
+    platform: "darwin",
     signal: new AbortController().signal,
     progress: (line) => lines.push(line),
     ...overrides,
@@ -287,6 +288,21 @@ describe("seedVolumes", () => {
         expect(lines).toEqual([]);
       }),
     );
+  });
+
+  it("copies nothing off macOS, says so and goes on with the next volume", async () => {
+    const { source } = await sourceTree();
+    const sandbox = await fakeSandbox();
+    const lines = await runSeeds(sandbox, [seedOf(source), seedOf(source, "pinata-shared-other")], {
+      platform: "linux",
+    });
+
+    expect(extractOf(sandbox)).toBeUndefined();
+    expect(wroteMarker(sandbox)).toBe(false);
+    expect(lines).toEqual([
+      notCopied("the copy runs only on macOS"),
+      notCopied("the copy runs only on macOS"),
+    ]);
   });
 
   it("copies nothing and says so when the marker names another source", async () => {

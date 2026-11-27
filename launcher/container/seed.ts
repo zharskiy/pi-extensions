@@ -28,6 +28,7 @@ export interface SeedInput {
   containerId: string;
   stateDir: string;
   seeds: VolumeSeed[];
+  platform: NodeJS.Platform;
   signal: AbortSignal;
   progress: (line: string) => void;
 }
@@ -236,6 +237,10 @@ const seedVolume = (input: SeedInput, seed: VolumeSeed) =>
         input.progress(otherSourceLine(seed, marker.source));
 
         return;
+      }
+
+      if (input.platform !== "darwin") {
+        throw new LauncherError("the copy runs only on macOS");
       }
 
       input.progress(`pinata: copying ${seed.shownSource} into the volume at ${seed.shownTarget}, one time`);

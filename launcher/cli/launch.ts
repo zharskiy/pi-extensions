@@ -433,6 +433,7 @@ const seedContainerVolumes = (input: PreparedInput, containerId: string) => {
     containerId,
     stateDir: context.stateDir,
     seeds: volumeSeeds(context.effective.config, context.stateDir, input.volumeSources),
+    platform: input.deps.platform,
     signal: input.cancelled,
     progress: input.progress,
   });
