@@ -26,6 +26,7 @@ Every mechanism is tested against these requirements.
 1. **Achievable, as hygiene, not as a security boundary.** Every package manager and build tool run inside can be kept from writing a `node_modules` to the Mac, and the Mac's own `node_modules` hidden inside, across the whole root. An install that starts within milliseconds of its `package.json` appearing can still write its first files to the Mac, and an agent that wants Linux files on the Mac can write them under any other name, because it has the whole root read-write (CB 52).
 2. **Industry standard:** share the sources and keep a per-OS `node_modules` on Linux-local storage at paths known in advance (a volume or a sync exclude per path), or share nothing and clone inside Linux ([compose-watch], [vscode-perf], [devspace-sync], [codespaces]). No tool found discovers new `node_modules` at any depth after start.
 3. **Recommended:** a static overlay of the whole root plus mounts on demand. At launch a walk on the Mac's own disk puts a VM-disk volume over `node_modules` beside every `package.json` or lockfile, tracked folders excepted. The root bind gets `rslave`, and when the Mac's FSEvents watch sees a new `package.json` or `node_modules`, a root helper in the VM mounts a volume there, which the running container sees (L1, L4). No seccomp. Second choice: the same plus a seccomp trap on `mkdir` as an optional strict mode.
+   *Owner's decision, 2026-11-27:* only the root walk, the first step of this design, is to be built, as an interim step, not yet started. The on-demand mounts and the trap are not to be built: the end state is the code in the VM, which replaces them. See the [Decision](../README.md#decision) section of the README.
 4. What cannot be had: the Mac IDE never sees the container's install; the Mac sees an empty folder, or its own install. A shared lockfile still crosses, and npm can drop other platforms' optional packages from it ([npm-4828]). Native binaries are chosen per OS and CPU at install time, so a tree installed on one OS breaks on the other ([esbuild], [sharp]).
 
 ## What the industry does
@@ -191,6 +192,8 @@ macOS 27.2 on this Mac. Node 26.10.0, npm 11.19.1, pnpm 12.9.1, Bun 1.4.2, Yarn 
 6. **overlayfs, mergerfs, in-VM watches.** They do not fit.
 
 The root walk alone, with mounts at create and no `rslave`, is the first step of 1 and can ship by itself: a change of scan scope, failing only R2.
+
+*Owner's decision, 2026-11-27:* that first step is the only one to be built, as an interim step until the code moves into the VM; it is not started. The rest of 1 and all of 2 are not to be built, because they need a root helper in the VM or a supervisor in front of every `mkdir`, and the code in the VM replaces them. The ranking and the design below stay as the record of what was found. See the [Decision](../README.md#decision) section of the README.
 
 ### Why the first is the more elegant
 

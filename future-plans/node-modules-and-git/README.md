@@ -4,6 +4,33 @@
 
 Today the launcher overlays `node_modules` only in the launch repository, and every `.git` reaches the container read-write through Apple's virtio-fs share. The owner asked: can `node_modules` never cross the share in either direction, and can git be handled on the host while the agent keeps git in the container? What is the industry standard, and the most logical design? The background is the open-file problem in [synced-workspace/README.md](../synced-workspace/README.md).
 
+## Decision
+
+Owner, 2026-11-27, after reading the research.
+
+The end state is the code in the VM, not on the live share. It is not scheduled. [synced-workspace/](../synced-workspace/README.md) holds one design of that kind, attempt 1's synced copy; no design is picked. With a sync, `node_modules` is a name on the exclude list at any depth from the first second, so no path list and no scan are needed ([Relation to the synced-workspace attempts](#relation-to-the-synced-workspace-attempts)).
+
+Until then, for `node_modules`:
+
+| Step | Built? |
+|---|---|
+| 1. Whole-root overlay at launch | Interim build. Not started. |
+| 2. `rslave` plus on-demand mounts by a VM helper | Not to be built. |
+| 3. seccomp trap on `mkdir`, strict mode | Not to be built. |
+
+Steps 2 and 3 need a root helper in the VM or a supervisor in front of every `mkdir`. Moving the code into the VM replaces both. It replaces step 1 too, but step 1 is a small extension of today's overlay scan.
+
+Accepted gaps of step 1 alone, until the code moves:
+
+- A new workspace package created during a session installs onto the Mac until the next launch.
+- A subagent worktree installs onto the Mac for as long as it lives. The walk does not enter `.pi`, so its checkouts under `<repo>/.pi/worktrees/` get no overlay at any launch.
+- `node_modules` folders tracked in git stay shared.
+- Dependencies written under another folder name still reach the Mac.
+
+To measure before building step 1: the walk time and the mount count on the real workspace. The command is in [node-modules.md](research/node-modules.md#not-verified-to-measure-on-the-vm), the `time find <root> … -name package.json -print` row; its output count is the number of mounts. The lab gives a scale (L5): 2,000 mounts added about 130 ms to container start and about 65 ms to `docker exec`; 500 added about 10 ms to start and nothing measurable to exec. Its limit: the lab made bind mounts inside the VM, while step 1 passes named volumes to Docker, as the launcher does today under its cap of 512, and that path is not timed above 512. If the walk is slow, its result could be cached between launches; this is an idea, not a tested design.
+
+No decision is recorded for git. Its recommendation below stands as written.
+
 ## Answers
 
 ### `node_modules`
@@ -12,7 +39,7 @@ Today the launcher overlays `node_modules` only in the launch repository, and ev
 
 Industry standard: the Linux copy of the dependencies stays on the Linux side, by a volume mounted over `node_modules` at known paths or by a sync that excludes it. Native binaries are chosen per OS and CPU at install time, so a shared copy is wrong anyway.
 
-Recommended design:
+The design the research recommends (see [Decision](#decision) for what is built of it):
 
 1. At launch, a walk of the whole `workspaceRoot` on the Mac's own disk finds every folder with a `package.json` or lockfile. Each gets a VM-disk volume over its `node_modules`, tracked folders excepted.
 2. The root bind gets `rslave`, so mounts made in the VM after start reach the running container.
@@ -20,7 +47,9 @@ Recommended design:
 
 Step 1 alone can ship first. A seccomp trap on `mkdir` closes the remaining race but puts a supervisor in front of every `mkdir`; a stuck one hangs the container. It is an optional strict mode for later, not the first build.
 
-What it gives up: a synchronous guarantee. An install that starts within the event and mount latency of its `package.json` appearing writes its first files to the Mac. Costs: a root helper acting on paths the agent can change, one mount per package, an empty `node_modules` on the Mac beside each, volumes lost on `pinata restart`. Not covered: the Mac IDE never sees the container's install, a shared lockfile still crosses, Maven `target/` cannot be overlaid. A mounted `node_modules` breaks `git worktree remove`, so subagent worktrees need a decision.
+The owner's decision: step 1 is the interim build. Steps 2 and 3 (the on-demand mounts and the trap) are not to be built, because they need a root helper in the VM or a supervisor in front of every `mkdir`, and moving the code into the VM replaces them. The costs and gaps below are those of the full design. Step 1 alone has no root helper and no race, but a folder created during a session gets no overlay until the next launch.
+
+What the full design gives up: a synchronous guarantee. An install that starts within the event and mount latency of its `package.json` appearing writes its first files to the Mac. Costs: a root helper acting on paths the agent can change, one mount per package, an empty `node_modules` on the Mac beside each, volumes lost on `pinata restart`. Not covered: the Mac IDE never sees the container's install, a shared lockfile still crosses, Maven `target/` cannot be overlaid. A mounted `node_modules` breaks `git worktree remove`, so subagent worktrees need a decision if on-demand mounts are ever built; step 1's walk does not enter `.pi`, so it mounts nothing inside `<repo>/.pi/worktrees/`.
 
 ### `.git`
 
@@ -71,6 +100,8 @@ The lab VM was a throwaway Colima profile: macOS 27.2, colima 0.10.3, lima 2.3.0
 
 Attempt 1's synced copy would replace the overlay scan with `mounts.unsynced`, a name list the sync leaves on each side at any depth, which covers new `node_modules` from the first second. Attempt 1 keeps one `.git` per repository, bound from the share, because two indexes stage each other's commits as reverts, the same failure the private git dir must answer. Attempt 2's own virtio-fs device does not separate `node_modules`. How either design here would sit on attempt 1's sync or attempt 2's device is not worked out.
 
+The owner's stated end state is the code in the VM ([Decision](#decision)), with no design picked. For `node_modules` the documents say what a sync of that kind means: the name sits on the exclude list at any depth from the first second, which replaces the whole-root walk, the on-demand mounts and the trap. What it means for git is not decided.
+
 ## Reading guide
 
 All under [research/](research/node-modules.md).
@@ -93,8 +124,8 @@ The experiment scripts, the lab scripts and their raw outputs, and the reviewer'
 
 1. The HEAD policy: may the developer's git and the agent's git hold different state over one live work tree; if so, "follow" or "review", with or without a rule against Mac-side work-tree git.
 2. Whether to build the index guard now.
-3. Whether to build the whole-root overlay, then the on-demand mounts.
-4. Subagent worktrees: unmount before removal through a request to the VM helper, or move `<repo>/.pi/worktrees` to a VM volume.
+3. Settled 2026-11-27 ([Decision](#decision)): the whole-root overlay is the interim build; the on-demand mounts are not to be built. Still to do before building: measure the walk and the mount count.
+4. Subagent worktrees: unmount before removal through a request to the VM helper, or move `<repo>/.pi/worktrees` to a VM volume. Only arises with on-demand mounts, which are not to be built: step 1's walk does not enter `.pi` ([node-modules.md](research/node-modules.md#recommended-design)), so it mounts nothing in a worktree and removal is not blocked. Its checkouts install onto the Mac instead, an accepted gap.
 5. Alternates over the share, or a one-time copy of the objects to the VM's disk.
 6. A newer git in the image, or a replay step that works on 2.39.
 7. Accepting that the private git dir reverses commit `f7a62a98`: per-repository mounts return, and the host runs git in the user's repositories.
