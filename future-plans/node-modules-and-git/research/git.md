@@ -55,12 +55,45 @@ Pinata accepts this risk on purpose. Commit `f7a62a98` (`feat(launcher)!: run ev
 
 Residual vectors outside `.git` survive every design that keeps the work tree live: husky sets `core.hooksPath` to `.husky/_` in the work tree, whose stubs run tracked scripts ([husky source](https://raw.githubusercontent.com/typicode/husky/main/index.js); E6), and build files, `.idea` run configurations, `package.json` scripts and planted nested repositories are agent-written code the Mac runs (CB 52).
 
+## Lock errors
+
+*Added 2026-11-27.* The owner sometimes sees a git lock error from the container. The exact message was not captured, so which lock and which command are unknown.
+
+What is known:
+
+- Locks are honoured across the two systems: `add`, `commit` and `checkout` take `index.lock` and fail at once while the other side holds it (PA). Lab L2's loop made 33 Mac commits fail on `index.lock`.
+- A background `git status` takes the index lock to write refreshed stat data back, an optional step ([git-status, Background refresh](https://git-scm.com/docs/git-status#_background_refresh)).
+- The stat mismatch between the macOS and Linux views makes each side rewrite the whole index (above; 40,000 files in 0.8 s on the Mac, 4 s in the container, PA), which holds the lock longer.
+
+From the code, checked 2026-11-27 (grep, tests and build output excluded):
+
+- Nothing in `launcher/`, `extensions/` or `platform/` sets `GIT_OPTIONAL_LOCKS`, `core.checkStat`, `core.trustctime`, `safe.directory`, `gc.auto` or `maintenance.*`. `core.fsmonitor` appears once, as `-c core.fsmonitor=false` on the host's own identity read (`launcher/hostpi/tools/git.ts:7`), never in the container.
+- The host runs no git against the workspace: one `git config --global --includes --get-regexp '^user\.(name|email)$'` per launch (`launcher/hostpi/tools/git.ts:27-29`), which reads the global file only.
+- In the container, the subagents extension runs per `worktree: true` agent `rev-parse HEAD --show-prefix` and `worktree add -b` at the start, and `worktree remove`, `rev-parse <branch>` and, when the branch still points at its base, `branch -D` at the end (`extensions/subagents/core/run-agent/worktree.ts:38`, `:55`, `:66`, `:72`, `:78`). Nothing serialises parallel agents: `placement.ts:35` calls it directly. The shipped agents all say `worktree: false` (CB 58), so this arises only with a user's agent.
+
+Not researched:
+
+- Stale lock files left by a killed git.
+- Lock collisions between parallel subagents on refs, `packed-refs` or `config`; `worktree add -b` writes a branch ref and `.git/worktrees/<id>` (inferred, untested).
+- Whether `git gc --auto` runs in the container and holds locks there.
+- Which Mac tools run `status` with optional locks. IDEA sets `GIT_OPTIONAL_LOCKS=0` for itself since 2019.1 (PA); others were not checked.
+
+### What each setting changes and costs
+
+| Setting | What it changes | Cost |
+|---|---|---|
+| `GIT_OPTIONAL_LOCKS=0` | Read-only commands such as `status` no longer write refreshed stat data to the index, so they take no `index.lock`. | Files whose timestamps changed are compared again on every `status` until a real write refreshes the index. |
+| `core.checkStat=minimal` | Only the size and the whole-second mtime are compared; inode, owner and sub-second times are ignored. | A same-size edit within the same second can be missed; attempt 1 saw it with the guest clock behind (PA). |
+| `core.trustctime=false` | ctime is ignored. | None in practice. |
+
+Sources: https://git-scm.com/docs/git (`GIT_OPTIONAL_LOCKS`), https://git-scm.com/docs/git-config (`core.checkStat`, `core.trustctime`), https://git-scm.com/docs/git-status (Background refresh). The owner decided on 2026-11-27 that pinata applies them through its commands, and a design is proposed, not agreed: see the [Decision](../README.md#decision) section of the README and [git-settings-proposal.md](../git-settings-proposal.md).
+
 ## What the industry does
 
 | Who | Where git runs, what happens to `.git` | Source |
 |---|---|---|
 | VS Code Dev Containers | Live tree and `.git` bind-mounted; git runs in the container; nothing special for `.git`. Credentials forwarded by helper and SSH agent. For speed: a volume for `node_modules`, or "clone repository in container volume". | [credentials](https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials), [performance](https://code.visualstudio.com/remote/advancedcontainers/improve-performance) |
-| Docker Sandboxes | Direct: live host tree, both sides run git, nothing special. Clone: "a separate Git clone inside the sandbox", host repo readable at `/run/sandbox/source`, host fetches from a remote `sandbox-<name>` "through the daemon socket". Host worktrees: git on the host, the sandbox "can't commit, branch, or check status". Mountless: branches pushed to a remote. | [git workflows](https://docs.docker.com/ai/sandboxes/workflows/git.md) |
+| Docker Sandboxes | Direct: live host tree through a "filesystem passthrough" with virtiofs caching on by default, both sides run git, nothing special (see [below](#docker-sandboxes-direct-mode)). Clone: "a separate Git clone inside the sandbox", host repo readable at `/run/sandbox/source`, host fetches from a remote `sandbox-<name>` "through the daemon socket". Host worktrees: git on the host, the sandbox "can't commit, branch, or check status". Mountless: branches pushed to a remote. | [git workflows](https://docs.docker.com/ai/sandboxes/workflows/git.md) |
 | Codex CLI | Host kernel, no share: `.git` "protected as read-only" in `workspace-write`. | [docs](https://learn.chatgpt.com/codex/agent-approvals-security) |
 | Claude Code sandbox | Host kernel, no share: `.git/hooks` and `.git/config` write-denied, the rest writable. | [docs](https://code.claude.com/docs/en/sandboxing) |
 | WSL users | A shell function calls `git.exe` for `/mnt` paths, for speed; the user is trusted. | [Windows-Dev-Performance#87](https://github.com/microsoft/Windows-Dev-Performance/issues/87), [wsl-git](https://pkg.go.dev/github.com/haitaow/wsl-git) |
@@ -75,6 +108,22 @@ Gemini CLI, OpenHands and Conductor were not checked.
 
 Nobody forwards an agent's git argv to the host; where git stays on the host (Docker host worktrees), the agent gets no git. Pinata's case, a live tree through a share between two kernels, matches the live-tree peers, which add nothing for `.git`; none of them combines the isolation pattern with a live work tree.
 
+### Docker Sandboxes' direct mode
+
+*Added 2026-11-27.* Read in the raw pages [architecture](https://docs.docker.com/ai/sandboxes/architecture/), [git workflows](https://docs.docker.com/ai/sandboxes/workflows/git/) and [troubleshooting](https://docs.docker.com/ai/sandboxes/troubleshooting/):
+
+- Direct mode is a live mount: the directory "is mounted into the sandbox through a filesystem passthrough", and "changes in either direction are instant with no sync process involved" (architecture).
+- "Virtiofs caching is enabled by default for directly mounted workspaces on all operating systems." (architecture)
+- The only coordination advice: "Both you and the agent can use Git, so agree on who manages branches and commits. Switching branches from either side changes the files both sides see." (git workflows)
+- Troubleshooting: "If you experience Git index corruption or unexpected file content, disable caching with the kill switch and recreate the sandbox", the switch being `DOCKER_SANDBOXES_ENABLE_VIRTIOFS_CACHE=0`.
+- Nothing on `index.lock`, `GIT_OPTIONAL_LOCKS` or stat settings in the three pages.
+
+Reported by a research agent through a summarising fetch, not checked against the raw pages: Docker's security pages advise reviewing `.git/hooks/` by hand and treating files the agent changed like an untrusted pull request; clone mode states that the agent cannot modify any byte under the host's `.git/`; Docker Desktop's bind-mount docs have no git guidance; Synchronized file shares list `.git` only as something one may exclude; VS Code Dev Containers copy the local `.gitconfig` and advise cloning into a volume for speed.
+
+Not verified: issue trackers were searched, not read; the Sandboxes release notes before 0.51 were not read.
+
+Conclusion: no product found ships protections for the shared mode. The industry's fix is the separate clone.
+
 ## Designs
 
 ### A. Shared `.git`, as today
@@ -87,6 +136,8 @@ Nobody forwards an agent's git argv to the host; where git stays on the host (Do
 - A container-only pre-commit check, installed by `core.hooksPath` through `GIT_CONFIG_COUNT`, that refuses a commit whose tree deletes every tracked file. Limits: it replaces a repository's own `core.hooksPath` (husky), so it must chain to it; `--no-verify` skips it; it does not catch a partial loss.
 
 With them go attempt 1's container settings by `GIT_CONFIG_COUNT` (`core.checkStat=minimal`, `core.trustctime=false`, `core.ignorecase=false`, `GIT_OPTIONAL_LOCKS=0`, PA) and `safe.directory`, which pinata sets nowhere today (CB 49) and the lab needed (lab L2). The user's `env.set` can also set `GIT_CONFIG_COUNT` (CB 48), so the two must be merged (inferred).
+
+*2026-11-27:* the proposal for the lock settings puts the two `core` keys in the rendered `~/.gitconfig` instead, to avoid that merge, and leaves `core.ignorecase` and `safe.directory` out ([git-settings-proposal.md](../git-settings-proposal.md)). It is not agreed.
 
 A2 keeps one HEAD and one index, the property attempt 1 chose a single `.git` for (PA). It does nothing for the walk: an fsmonitor hook over the shared index is unmeasured and probably fights the Mac's git, which drops the index extension when it rewrites the index without the setting (inferred; PA rules fsmonitor out of shared config).
 
@@ -212,6 +263,10 @@ Recommended order:
 2. Build the index guard (A2) now, with attempt 1's container-only settings and `safe.directory`, because the hazard exists today whatever is decided later.
 3. Treat D with the hook as the target and write its spec next, starting from the HEAD policy and a tested answer to the stash and branch-switch case. Do not build D before that.
 
+*Owner's decision, 2026-11-27:* the settings that reduce lock collisions are to be applied and removed by pinata through its commands, globally on the Mac; nothing else is decided for git. See the [Decision](../README.md#decision) section of the README.
+
+*Recommendation, 2026-11-27, not an owner decision:* given the recorded end state of the code in the VM, git would move with it. A clone on the VM's disk with results fetched as branches (E) becomes the end state rather than an optional mode, and neither the index guard (A2) nor D is worth building in the interim. Until then one risk remains: a real Mac-side write at the same moment as an agent commit can still produce the commit that deletes every file. `git commit` does not touch the work tree, so that commit can be undone. The ranking above stays as the record of what was found.
+
 ### What D changes in the launcher
 
 - Discovery lists repositories under the root (lstat only, as attempt 1 proposed) and creates per repository a volume over `.git`, a read-only bind of the Mac's git dir, and a root exec to chown the volume. Volume subpaths (Docker 26 or later; pinata requires 28, CB 64) could make it one volume (inferred, not tried).
@@ -262,7 +317,9 @@ Recommended order:
 - Codex sandbox: https://learn.chatgpt.com/codex/agent-approvals-security
 - Claude Code sandbox: https://code.claude.com/docs/en/sandboxing
 - Claude Code cloud sessions: https://code.claude.com/docs/en/claude-code-on-the-web
-- Docker Sandboxes git: https://docs.docker.com/ai/sandboxes/workflows/git.md
+- Docker Sandboxes git: https://docs.docker.com/ai/sandboxes/workflows/git.md, https://docs.docker.com/ai/sandboxes/workflows/git/
+- Docker Sandboxes architecture and troubleshooting: https://docs.docker.com/ai/sandboxes/architecture/, https://docs.docker.com/ai/sandboxes/troubleshooting/
+- git and git-status (`GIT_OPTIONAL_LOCKS`, background refresh): https://git-scm.com/docs/git, https://git-scm.com/docs/git-status
 - container-use: https://github.com/dagger/container-use, https://container-use.com/environment-workflow
 - VS Code Dev Containers: https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials, https://code.visualstudio.com/remote/advancedcontainers/improve-performance
 - WSL git: https://github.com/microsoft/Windows-Dev-Performance/issues/87, https://pkg.go.dev/github.com/haitaow/wsl-git

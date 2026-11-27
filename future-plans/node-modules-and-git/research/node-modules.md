@@ -26,7 +26,7 @@ Every mechanism is tested against these requirements.
 1. **Achievable, as hygiene, not as a security boundary.** Every package manager and build tool run inside can be kept from writing a `node_modules` to the Mac, and the Mac's own `node_modules` hidden inside, across the whole root. An install that starts within milliseconds of its `package.json` appearing can still write its first files to the Mac, and an agent that wants Linux files on the Mac can write them under any other name, because it has the whole root read-write (CB 52).
 2. **Industry standard:** share the sources and keep a per-OS `node_modules` on Linux-local storage at paths known in advance (a volume or a sync exclude per path), or share nothing and clone inside Linux ([compose-watch], [vscode-perf], [devspace-sync], [codespaces]). No tool found discovers new `node_modules` at any depth after start.
 3. **Recommended:** a static overlay of the whole root plus mounts on demand. At launch a walk on the Mac's own disk puts a VM-disk volume over `node_modules` beside every `package.json` or lockfile, tracked folders excepted. The root bind gets `rslave`, and when the Mac's FSEvents watch sees a new `package.json` or `node_modules`, a root helper in the VM mounts a volume there, which the running container sees (L1, L4). No seccomp. Second choice: the same plus a seccomp trap on `mkdir` as an optional strict mode.
-   *Owner's decision, 2026-11-27:* only the root walk, the first step of this design, is to be built, as an interim step, not yet started. The on-demand mounts and the trap are not to be built: the end state is the code in the VM, which replaces them. See the [Decision](../README.md#decision) section of the README.
+   *Owner's decision, 2026-11-27:* first, only the root walk, the first step of this design, was to be built as an interim step; the on-demand mounts and the trap are not to be built, because the end state is the code in the VM. *Superseded the same day:* the owner removed the walk for the root and the launch repository alike, and `mounts.autoOverlays` with it, without backward compatibility. Nothing of this design is built. See the [Decision](../README.md#decision) section of the README.
 4. What cannot be had: the Mac IDE never sees the container's install; the Mac sees an empty folder, or its own install. A shared lockfile still crosses, and npm can drop other platforms' optional packages from it ([npm-4828]). Native binaries are chosen per OS and CPU at install time, so a tree installed on one OS breaks on the other ([esbuild], [sharp]).
 
 ## What the industry does
@@ -193,7 +193,7 @@ macOS 27.2 on this Mac. Node 26.10.0, npm 11.19.1, pnpm 12.9.1, Bun 1.4.2, Yarn 
 
 The root walk alone, with mounts at create and no `rslave`, is the first step of 1 and can ship by itself: a change of scan scope, failing only R2.
 
-*Owner's decision, 2026-11-27:* that first step is the only one to be built, as an interim step until the code moves into the VM; it is not started. The rest of 1 and all of 2 are not to be built, because they need a root helper in the VM or a supervisor in front of every `mkdir`, and the code in the VM replaces them. The ranking and the design below stay as the record of what was found. See the [Decision](../README.md#decision) section of the README.
+*Owner's decision, 2026-11-27:* that first step was at first the only one to be built, as an interim step until the code moves into the VM. *Superseded the same day:* the owner removed the walk altogether, for the root and the launch repository, and `mounts.autoOverlays` with it; the removal is track B of [plan.md](../plan.md#track-b-removal-of-the-build-output-overlays). The rest of 1 and all of 2 are not to be built, because they need a root helper in the VM or a supervisor in front of every `mkdir`, and the code in the VM replaces them. The ranking and the design below stay as the record of what was found. See the [Decision](../README.md#decision) section of the README.
 
 ### Why the first is the more elegant
 
@@ -210,9 +210,11 @@ Design 1 adds the least and fails the softest: it extends the launcher's own pat
 
 At launch the launcher walks the whole `workspaceRoot` on the Mac without entering `.git`, `.pi` or `node_modules`, and finds every folder with a `package.json` or node lockfile. Except where `node_modules` is tracked, each gets a VM-disk volume over `<dir>/node_modules`, keyed and labelled as today and persisting across launches, with the 512 cap lifted (L5). The root bind gets `rslave`. While pi runs, a recursive FSEvents watch on the Mac sees new `package.json` files and `node_modules` folders; the launcher creates the mount point and asks the VM helper to mount a volume, only over a missing or empty folder. Strict mode, off by default, adds the trap.
 
+*Note, 2026-11-27:* the code differs from this paragraph. Its rule is a node lockfile in the folder, or a `package.json` below a lockfile in the same repository (at most 256 per repository), not every `package.json`; it has no exception for tracked `node_modules`; and the same walk overlays `.venv`, `target` and `.gradle` beside their markers. The plan recommended keeping the code's rule; since the owner's later decision the same day the code's walk is removed instead ([plan.md](../plan.md#track-b-removal-of-the-build-output-overlays)).
+
 ### What it changes in the launcher
 
-- The overlay scan: whole root, beside every `package.json` or lockfile, tracked folders excepted, without the per-repository caps and the 512 cap (CB 13, 19, 20). Measure the real workspace's walk first.
+- The overlay scan: whole root, beside every `package.json` or lockfile, tracked folders excepted (*2026-11-27:* the code's rule differs, see the note above), without the per-repository caps and the 512 cap (CB 13, 19, 20). *2026-11-27:* not to be made; the owner removed the scan instead.
 - `container-body.ts`: `BindOptions.Propagation: "rslave"` on the root bind (CB 9); in strict mode, the merged profile in `SecurityOpt`.
 - A VM helper under the rules of [The helper as a trust point](#the-helper-as-a-trust-point), with root in the VM, which pinata already uses (CB 59).
 - The FSEvents watcher in the pinata process. Mount points are recorded as today (CB 29), and the helper's mounts are removed at the end of the last launch.
@@ -242,11 +244,51 @@ Propagation, descriptor cost, FSEvents for guest writes, mount scale, `listenerP
 | What an install mounted over midway leaves | Mount over `node_modules` 100 ms into `npm ci`; compare Mac folder, volume and `npm ls`. |
 | npm, pnpm, Bun create `node_modules` by `mkdir`, not `rename` | `strace -f -e trace=mkdir,mkdirat,rename,renameat2 <pm> install` in the container. |
 | Trap cost on a real install | `time npm ci`, 20,000 files, trapped (merged profile) and untrapped. |
-| Walk time on the real workspace | `time find <root> \( -name .git -o -name .pi -o -name node_modules \) -prune -o -name package.json -print`, cold and warm. |
+| Walk time on the real workspace | `time find <root> \( -name .git -o -name .pi -o -name node_modules \) -prune -o -name package.json -print`, cold and warm. *Correction, 2026-11-27:* this counts `package.json` files, not the code's directories walked or its overlays; it has no `-type f`, matches `.git` case-sensitively, does not skip folders whose marker sits beside them and prints to the terminal while timed. Tested commands and the code's own scan, kept for the record and not needed since the walk is removed: [below](#2026-11-27-measurement-commands-kept-for-the-record). |
 | Worktree removal | L2 without `--force`, then with `.pi/worktrees` on a volume. |
 | Orphan mount after a Mac-side delete | Mount at `r/node_modules`, `rm -rf r` on the Mac, `findmnt` in the VM and container. |
 | fanotify on virtio-fs | `fanotify_mark(FAN_MARK_FILESYSTEM, FAN_CREATE\|FAN_ONDIR)` with `FAN_REPORT_FID`. Expect ENODEV. |
 | AppArmor refusal | `deny <root>/**/node_modules/ w,`, `--security-opt apparmor=<name>`, then `mkdir`. |
+
+## 2026-11-27: measurement commands, kept for the record
+
+Moved here from [plan.md](../plan.md) on 2026-11-27. They counted what step 1's walk of the whole root would visit, to feed its gate. The owner then removed the walk and `mounts.autoOverlays` ([README.md](../README.md#decision)), so they are not needed and are kept only as the record of how the count would have been taken.
+
+Run on the Mac, in zsh or sh; nothing is written. Replace the path in the first line with the configured `workspaceRoot`. The counts follow the code's walk: it does not enter a `.git` of any letter case, `.pi`, `node_modules`, or a folder whose marker sits beside it (`target` beside `Cargo.lock`, `.venv` beside `uv.lock`, `poetry.lock` or `Pipfile.lock`, `.gradle` beside `settings.gradle` or `settings.gradle.kts`), and it does not follow symbolic links.
+
+```
+ROOT=/path/to/workspaceRoot
+sh -c '
+cd "$1" || exit 1
+walk() {
+  find . \( -iname .git -o -name .pi -o -name node_modules \
+    -o -name target -exec test -e {}/../Cargo.lock \; \
+    -o -name .venv \( -exec test -e {}/../uv.lock \; -o -exec test -e {}/../poetry.lock \; -o -exec test -e {}/../Pipfile.lock \; \) \
+    -o -name .gradle \( -exec test -e {}/../settings.gradle \; -o -exec test -e {}/../settings.gradle.kts \; \) \
+    \) -prune -o "$@"
+}
+echo "directories walked: $(walk -type d -print | wc -l)"
+echo "target folders beside pom.xml: $(walk -type d -name target -exec test -e {}/../pom.xml \; -print | wc -l)"
+echo "directories in them: $(walk -type d -name target -exec test -e {}/../pom.xml \; -exec find {} \( -iname .git -o -name .pi -o -name node_modules \) -prune -o -type d -print \; | wc -l)"
+echo "folders with a node lockfile: $(walk -type f \( -name package-lock.json -o -name npm-shrinkwrap.json -o -name pnpm-lock.yaml -o -name yarn.lock -o -name bun.lock -o -name bun.lockb \) -print | sed "s|/[^/]*\$||" | sort -u | wc -l)"
+echo "package.json files: $(walk -type f -name package.json -print | wc -l)"
+echo "repositories: $(find . \( -name .pi -o -name node_modules \) -prune -o -iname .git -print -prune | wc -l)"
+echo "node_modules folders on disk, by top-level folder:"
+find . \( -iname .git -o -name .pi \) -prune -o -type d -name node_modules -print -prune | cut -d/ -f2 | sort | uniq -c
+' sh "$ROOT"
+```
+
+The exact overlay count and the walk time, by the code's own scan with no budget limit. For an npm-installed pinata:
+
+```
+BIN="$(dirname "$(realpath "$(command -v pinata)")")"
+SCAN="$BIN/../dist/workspace/overlay-scan.js"
+node -e 'const [, file, root] = process.argv; import(file).then(async (m) => { const t = performance.now(); const r = await m.scanOverlays(root, 1e8); console.log(`ms ${Math.round(performance.now() - t)}, overlays ${r.overlays.length}, node_modules ${r.overlays.filter((p) => p.endsWith("/node_modules")).length}, truncated ${r.truncated}`); })' "$SCAN" "$ROOT"
+```
+
+From a checkout, set `SCAN="$BIN/../workspace/overlay-scan.ts"` instead (`dist/` there may be stale). The `.ts` file needs Node's type stripping, which pinata's own dev bins rely on; pinata's `engines` asks for Node 22.19 or later. Node refuses to strip types under `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which is why the npm install uses the built `.js`. For cold numbers run `sudo purge` first; run the scan a second time for warm numbers.
+
+Tested 2026-11-27 on macOS 27.2 with Node 26.10.0, in `/bin/sh`, `zsh -f`, an interactive zsh and `dash`, against a scratch tree of seven repositories: a `.git` folder, a `.git` file and a `.Git` folder; a `.pi/worktrees` checkout with a `package.json` and a `node_modules`; nested `node_modules`; `target` beside `Cargo.lock` and beside two `pom.xml`; a `.venv` beside `uv.lock`; a `.gradle` without its marker; three node lockfiles; a nested repository. Every count matched the hand count: 37 directories walked, 2 `target` folders beside `pom.xml` holding 6 directories, 3 lockfile folders, 9 `package.json` files, 7 repositories, `node_modules` on disk 2 and 1. The scan printed 9 overlays, 7 of them `node_modules`, the same list as worked out by hand, from the checkout's `.ts`, its `dist/` `.js`, and both files copied under a scratch `lib/node_modules/` with a `bin/pinata` link pointing in, which is how the npm-install form was tested; on a real `npm install -g` it is untested. Node versions other than 26.10.0 are untested.
 
 ## Sources
 

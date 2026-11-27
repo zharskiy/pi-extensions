@@ -10,26 +10,35 @@ Owner, 2026-11-27, after reading the research.
 
 The end state is the code in the VM, not on the live share. It is not scheduled. [synced-workspace/](../synced-workspace/README.md) holds one design of that kind, attempt 1's synced copy; no design is picked. With a sync, `node_modules` is a name on the exclude list at any depth from the first second, so no path list and no scan are needed ([Relation to the synced-workspace attempts](#relation-to-the-synced-workspace-attempts)).
 
-Until then, for `node_modules`:
+Until then, for `node_modules`, the current decision, owner, 2026-11-27, later the same day: "let's get rid of walk mechanism both for root and launch projects. remove mounts.autoOverlays completely. do not support backward compatibility. reflect these decisions in the plan and do not start implementing yet".
 
 | Step | Built? |
 |---|---|
-| 1. Whole-root overlay at launch | Interim build. Not started. |
+| Today's overlay scan of the launch repository | To be removed, with `mounts.autoOverlays`. Not started. |
+| 1. Whole-root overlay at launch | Not to be built. |
 | 2. `rslave` plus on-demand mounts by a VM helper | Not to be built. |
 | 3. seccomp trap on `mkdir`, strict mode | Not to be built. |
 
-Steps 2 and 3 need a root helper in the VM or a supervisor in front of every `mkdir`. Moving the code into the VM replaces both. It replaces step 1 too, but step 1 is a small extension of today's overlay scan.
+No shim or migration keeps the key working. The removal, its open points and what it costs are track B of [plan.md](plan.md#track-b-removal-of-the-build-output-overlays); its points put to the owner were answered on 2026-11-27 (below).
 
-Accepted gaps of step 1 alone, until the code moves:
+*Superseded the same day:* the owner's first decision on 2026-11-27 made step 1 the interim build and steps 2 and 3 not to be built, because they need a root helper in the VM or a supervisor in front of every `mkdir`, and moving the code into the VM replaces them. Its accepted gaps no longer apply: a new package or a subagent worktree installing onto the Mac, a tracked `node_modules` (which the code in fact hid; it showed as deleted inside), dependencies under another folder name. The measurement it asked for, the walk time and the mount count on the real workspace, is not needed; the tested commands are kept for the record in [node-modules.md](research/node-modules.md#2026-11-27-measurement-commands-kept-for-the-record). The lab's scale for many mounts stays in L5.
 
-- A new workspace package created during a session installs onto the Mac until the next launch.
-- A subagent worktree installs onto the Mac for as long as it lives. The walk does not enter `.pi`, so its checkouts under `<repo>/.pi/worktrees/` get no overlay at any launch.
-- `node_modules` folders tracked in git stay shared.
-- Dependencies written under another folder name still reach the Mac.
+For git, owner, 2026-11-27, after asking about the lock errors the container sometimes reports ([git.md](research/git.md#lock-errors)):
 
-To measure before building step 1: the walk time and the mount count on the real workspace. The command is in [node-modules.md](research/node-modules.md#not-verified-to-measure-on-the-vm), the `time find <root> … -name package.json -print` row; its output count is the number of mounts. The lab gives a scale (L5): 2,000 mounts added about 130 ms to container start and about 65 ms to `docker exec`; 500 added about 10 ms to start and nothing measurable to exec. Its limit: the lab made bind mounts inside the VM, while step 1 passes named volumes to Docker, as the launcher does today under its cap of 512, and that path is not timed above 512. If the walk is slow, its result could be cached between launches; this is an idea, not a tested design.
+- The git settings that reduce lock collisions are applied and removed by pinata itself, through its commands: `pinata install`, and others where needed, such as `pinata update` and `pinata uninstall`. Nobody sets them by hand, and nothing is applied until the plan is agreed.
+- On the Mac they are global: a plain `export GIT_OPTIONAL_LOCKS=0` in the shell profile, and `core.checkStat=minimal` and `core.trustctime=false` in the global git config. Scoping them to the workspace was considered and declined: a zsh `chpwd` hook or direnv for the variable, `includeIf "gitdir:<root>/"` for the config.
+- Every line pinata writes to a shell profile sits between marker lines. This is already the case: `launcher/cli/pinata/path-block.ts` writes `# pinata begin` … `# pinata end` and replaces the block as a whole.
+- `pinata uninstall` removes them again, and only what lies between `# pinata begin` and `# pinata end`. Nothing outside the markers is touched, in the shell profile or in the global git config.
+- In the container, pinata's own environment values and the user's `env.set` are two sources and nothing is merged. Where both name a variable, the `env.set` value replaces pinata's.
+- Implementation has not started and does not start before the plan is agreed.
 
-No decision is recorded for git. Its recommendation below stands as written.
+The design is in [git-settings-proposal.md](git-settings-proposal.md); of its open points, the `includeIf` form was agreed on 2026-11-27, the others stand as the plan's choices. *2026-11-27:* the plan steps for both, with a recommended answer to every open point, are in [plan.md](plan.md); the points put to the owner were answered on 2026-11-27 (below), and since the later decision the same day its `node_modules` track is the removal of the overlays, with no measurement or gate. Nothing else is decided for git; in particular the long-term arrangement is not. The research's recommendation below stands as written. A later recommendation, not an owner decision, is dated in [git.md](research/git.md#conclusion): with the code in the VM, git moves with it, and neither the index guard nor the private git dir would be built in the interim.
+
+For the Mac's open-file limit, owner, 2026-11-27: "let's also increase the maxOpenFiles for the host during pinata install/session start (you decide) flow. Let's set it near 1M". So pinata itself raises the limit to about one million; install or session start was left open.
+
+- *Choice delegated to the plan, 2026-11-27, agreed by the owner the same day ("agree"):* `pinata install` raises it and installs a boot-time job that restores it, since the value resets at every reboot and needs root, and a session start cannot always show a password prompt. Launches and `pinata doctor` only check the value. Details, and the recommended reading of "maxOpenFiles" as `kern.maxfiles` with `kern.maxfilesperproc` untouched, are track C of [plan.md](plan.md#track-c-the-macs-open-file-limit). The background is [synced-workspace/README.md](../synced-workspace/README.md#the-problem) and attempt 2's [proposal.md](../synced-workspace/attempt-2-live-share/proposal.md#the-mechanism-corrected) and [notes-vz-internals.md](../synced-workspace/attempt-2-live-share/notes-vz-internals.md).
+
+Owner's answers, 2026-11-27, to the six points put to them, verbatim: "everything that is worth removing must be removed", then "1. correct" (`kern.maxfiles` only, the per-process limit left at 61,440), "2. okay" (pinata's first `sudo` and root-owned file on the Mac), "3. agree" (install, not session start), "4. we'll start working on all the tracks in parallel which we've been discussing" (order: all three tracks in parallel), "5. yes" (delete the daily volume cleanup and the mount-point record), "6. that's okay" (the `includeIf "gitdir:/"` form). *This session's reading, not the owner's words:* the opening sentence means all code the removal leaves dead goes in the same change and none is kept for one release; it adds no code that cleans up users' machines. The other recommendations stand as the plan's choices; implementation has not started and starts on the owner's word ([plan.md](plan.md#owners-answers-2026-11-27)).
 
 ## Answers
 
@@ -47,7 +56,7 @@ The design the research recommends (see [Decision](#decision) for what is built 
 
 Step 1 alone can ship first. A seccomp trap on `mkdir` closes the remaining race but puts a supervisor in front of every `mkdir`; a stuck one hangs the container. It is an optional strict mode for later, not the first build.
 
-The owner's decision: step 1 is the interim build. Steps 2 and 3 (the on-demand mounts and the trap) are not to be built, because they need a root helper in the VM or a supervisor in front of every `mkdir`, and moving the code into the VM replaces them. The costs and gaps below are those of the full design. Step 1 alone has no root helper and no race, but a folder created during a session gets no overlay until the next launch.
+The owner's first decision, 2026-11-27: step 1 is the interim build. *Superseded the same day:* the walk is removed for the root and the launch repository and `mounts.autoOverlays` goes, so step 1 is not built either ([Decision](#decision)). Steps 2 and 3 (the on-demand mounts and the trap) are not to be built, because they need a root helper in the VM or a supervisor in front of every `mkdir`, and moving the code into the VM replaces them. The costs and gaps below are those of the full design. Step 1 alone has no root helper and no race, but a folder created during a session gets no overlay until the next launch.
 
 What the full design gives up: a synchronous guarantee. An install that starts within the event and mount latency of its `package.json` appearing writes its first files to the Mac. Costs: a root helper acting on paths the agent can change, one mount per package, an empty `node_modules` on the Mac beside each, volumes lost on `pinata restart`. Not covered: the Mac IDE never sees the container's install, a shared lockfile still crosses, Maven `target/` cannot be overlaid. A mounted `node_modules` breaks `git worktree remove`, so subagent worktrees need a decision if on-demand mounts are ever built; step 1's walk does not enter `.pi`, so it mounts nothing inside `<repo>/.pi/worktrees/`.
 
@@ -88,13 +97,15 @@ The lab VM was a throwaway Colima profile: macOS 27.2, colima 0.10.3, lima 2.3.0
 
 ## Not measured
 
-- Walk time and file counts on the real workspace and the failing machine.
+- Anything with root on the Mac: a `kern.maxfiles` above 122,880, a LaunchDaemon restoring it at boot on macOS 27, a running VM under the raised table ([plan.md](plan.md#track-c-the-macs-open-file-limit), C0).
+- Walk time and file counts on the real workspace and the failing machine. *2026-11-27:* no longer needed, since the owner removed the walk ([Decision](#decision)).
 - A real Mac watcher behind the hook, with its cookie barrier.
 - The HEAD policy against Mac stash, shelve and branch switch; the index guard against the empty-index loop.
 - Latency from a new `package.json` to a visible mount; an install mounted over midway.
 - Whether npm, pnpm and Bun create `node_modules` by `mkdir` or `rename`; the trap on a real `npm ci`.
 - The replay step on git 2.39.5 in pinata's image; IDEA during a sync.
 - Worktree removal with `.pi/worktrees` on a volume; orphan mounts after a Mac-side delete.
+- The lock errors the owner sees: their message, lock and command were not captured. The git settings of the [proposal](git-settings-proposal.md) on the owner's workspace; the evidence for them is attempt 1's measurement ([prior-attempts.md](research/prior-attempts.md#git)).
 
 ## Relation to the synced-workspace attempts
 
@@ -112,6 +123,11 @@ All under [research/](research/node-modules.md).
 4. [current-behaviour.md](research/current-behaviour.md): what the launcher does today, with `path:line` references.
 5. [prior-attempts.md](research/prior-attempts.md): what the synced-workspace attempts established here.
 
+Outside research/:
+
+- [plan.md](plan.md): the plan steps for the git settings, the removal of the build output overlays and the Mac's open-file limit, with a recommendation for each open point and the owner's answers of 2026-11-27; not started.
+- [git-settings-proposal.md](git-settings-proposal.md): the design for the git settings of the [Decision](#decision); its `includeIf` form agreed 2026-11-27.
+
 ## How the research was done
 
 A code trace and a digest of the earlier attempts; two research tracks, sources plus experiments on the Mac; an independent review, which reproduced the stash failure and found gaps in the `node_modules` design; a VM lab; a revision of both documents.
@@ -123,9 +139,17 @@ The experiment scripts, the lab scripts and their raw outputs, and the reviewer'
 ## Open decisions for the owner
 
 1. The HEAD policy: may the developer's git and the agent's git hold different state over one live work tree; if so, "follow" or "review", with or without a rule against Mac-side work-tree git.
-2. Whether to build the index guard now.
-3. Settled 2026-11-27 ([Decision](#decision)): the whole-root overlay is the interim build; the on-demand mounts are not to be built. Still to do before building: measure the walk and the mount count.
-4. Subagent worktrees: unmount before removal through a request to the VM helper, or move `<repo>/.pi/worktrees` to a VM volume. Only arises with on-demand mounts, which are not to be built: step 1's walk does not enter `.pi` ([node-modules.md](research/node-modules.md#recommended-design)), so it mounts nothing in a worktree and removal is not blocked. Its checkouts install onto the Mac instead, an accepted gap.
+2. Whether to build the index guard now. A later recommendation, not an owner decision, says no, given the end state ([git.md](research/git.md#conclusion), 2026-11-27).
+3. Answered 2026-11-27. Settled ([Decision](#decision)), later the same day: the walk goes for the root and the launch repository, `mounts.autoOverlays` goes without backward compatibility, and none of the three steps is built. This supersedes the same day's first answer, the whole-root overlay as the interim build with a measurement before it. The points of the removal were answered the same day: no cleanup code stays one release, the daily volume cleanup and the mount-point record go ("5. yes"); O1 and O2 stay documented manual steps ([plan.md](plan.md#removal-of-the-overlays)).
+4. Subagent worktrees: unmount before removal through a request to the VM helper, or move `<repo>/.pi/worktrees` to a VM volume. Only arises with on-demand mounts, which are not to be built. *2026-11-27:* with the overlays removed no volume sits in any repository, so no worktree removal is blocked; its checkouts install onto the Mac, like every repository.
 5. Alternates over the share, or a one-time copy of the objects to the VM's disk.
 6. A newer git in the image, or a replay step that works on 2.39.
 7. Accepting that the private git dir reverses commit `f7a62a98`: per-repository mounts return, and the host runs git in the user's repositories.
+8. Partly answered 2026-11-27: the first point below, the `includeIf "gitdir:/"` form, "that's okay"; the others were not put one by one. Agreeing the [git settings proposal](git-settings-proposal.md), with its open points ([Open points](git-settings-proposal.md#open-points)). *2026-11-27:* each now has a recommendation, revised for the first and second below, and the steps are in [plan.md](plan.md#track-a-git-settings):
+   - the global git config: a marked block with one `include.path` entry and a file pinata owns, or the two keys themselves in a marked block; now recommended: a marked block with `[includeIf "gitdir:/"]`, which matches every repository, so it is not the scoping the owner declined;
+   - a user who already has a value for one of the keys: override, defer or skip; now recommended: defer, with the block at the start of the global file;
+   - where pinata's included file lives, outside `<state>`; now recommended: a static file in the installed package;
+   - whether `pinata uninstall --sandbox` keeps the settings, as it keeps the marked block (recommended: keep);
+   - the marker names: keep `# pinata begin` and `# pinata end` (recommended), or rename;
+   - whether `pinata doctor` reports the settings; now recommended: no check now.
+9. Answered 2026-11-27. The Mac's open-file limit: the flow chosen for the owner (install and a boot job, "agree") and the reading of "maxOpenFiles" as `kern.maxfiles` to at least 1,048,576, with `kern.maxfilesperproc` untouched ("correct"), both confirmed; root on the Mac "okay"; all tracks in parallel ([plan.md](plan.md#the-open-file-limit), C1 to C9).
