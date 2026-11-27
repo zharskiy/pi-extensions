@@ -126,6 +126,30 @@ describe("pinata install", () => {
     );
   });
 
+  it("edits a linked ~/.zshrc through the link, and leaves a link to a missing file alone", async () => {
+    const pinata = await createPinata();
+    const zshrc = join(pinata.home, ".zshrc");
+    const bashrc = join(pinata.home, ".bashrc");
+    const real = join(pinata.harness.root, "dotfiles", "zshrc");
+    const missing = join(pinata.harness.root, "dotfiles", "bashrc");
+
+    await mkdir(join(real, ".."), { recursive: true });
+
+    await writeFile(real, "alias ll=ls\n");
+
+    await symlink(real, zshrc);
+
+    await symlink(missing, bashrc);
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect((await lstat(zshrc)).isSymbolicLink()).toBe(true);
+    expect(await readFile(real, "utf8")).toBe(`alias ll=ls\n\n${BLOCK(pinata.home)}`);
+    expect(await exists(missing)).toBe(false);
+    expect(pinata.harness.stdout()).toContain(
+      "! Left ~/.bashrc alone: it is a link to a file that does not exist\n",
+    );
+  });
+
   it("writes a non-ASCII home into the PATH block byte for byte", async () => {
     const pinata = await createPinata();
     const home = join(pinata.harness.root, "Café Мир");
