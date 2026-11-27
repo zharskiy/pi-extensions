@@ -293,7 +293,7 @@ describe("the sweep", () => {
     expect(fake.relays.size).toBe(1);
   });
 
-  it("forgets a repository whose root no longer exists, with its state and volumes", async () => {
+  it("forgets a repository whose root no longer exists, with its state, and keeps its volumes", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const gone = await tempDir("gone-repo");
@@ -311,7 +311,7 @@ describe("the sweep", () => {
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(await readFile(files.record, "utf8").catch(() => undefined)).toBeUndefined();
-    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(true);
     expect(harness.stdout()).toContain(`forgot ${gone}, which no longer exists\n`);
   });
 
@@ -387,7 +387,7 @@ describe("the sweep", () => {
     expect(harness.stderr()).not.toContain("unreachable");
   });
 
-  it("removes a volume whose repository no longer exists on disk", async () => {
+  it("removes no volume in the daily collection, also one whose repository no longer exists on disk", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const gone = await tempDir("gone-repo");
@@ -400,8 +400,8 @@ describe("the sweep", () => {
     await rm(gone, { recursive: true, force: true });
 
     expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
-    expect(harness.stdout()).toContain("removed volume pinata-agent-gone\n");
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(true);
+    expect(harness.stdout()).not.toContain("removed volume");
   });
 
   it("keeps the pi folder every folder's sandbox shares when the repository that made it is gone", async () => {
@@ -423,11 +423,7 @@ describe("the sweep", () => {
 
     await run([], harness.deps);
 
-    const [agent = ""] = volumePlan({
-      workspace: { cwd: harness.repoRoot, repoRoot: harness.repoRoot, isGitRepo: true },
-      config: sandboxConfig(),
-      stateDir: harness.stateDir,
-    }).map((volume) => volume.name);
+    const [agent = ""] = volumePlan(sandboxConfig(), harness.stateDir).map((volume) => volume.name);
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(0);

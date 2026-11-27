@@ -18,9 +18,4 @@ export {
 } from "./services.ts";
 export type { LauncherContainerSpec } from "./spec.ts";
 export { buildContainerSpec, forwardedEnv, forwardedNames } from "./spec.ts";
-export {
-  configVolumes,
-  mountedVolumes,
-  overlayVolumes,
-  volumePlan,
-} from "./volumes.ts";
+export { configVolumes, mountedVolumes, volumePlan } from "./volumes.ts";

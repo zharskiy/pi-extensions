@@ -92,7 +92,6 @@ const repoFiles = (stateDir: string, repoHash: string) => {
     directory,
     record: join(directory, "repo.json"),
     prepareLock: join(stateDir, "locks", `prepare-${repoHash}.lock`),
-    created: join(directory, "created.json"),
   };
 };
 

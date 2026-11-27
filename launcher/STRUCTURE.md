@@ -62,7 +62,7 @@ cli/launches.ts                begin and finish a launch (registered under the f
 cli/busy.ts                    busyLaunches, the live launches of this state dir, and vmSessions, the VM's busy count that adds the running agent containers of other installs and names them
 cli/ground.ts                  the ground lock with its waiting line, the install's services started under it, the idle teardown of services, relay, network and proxy and the idle proxy stop (both wait for the lock unless a launch of this state dir is registered)
 cli/prepare.ts                 the repository's preparation lock with its waiting line, its if-free form for the opportunistic removals, its wait-unless-another-session form for the folder's last session, and the setup commands run in the agent container; the install's agent lock (withAgentLock) around the shared pi folder
-cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection of unused volumes and images
+cli/sweep.ts                   removeRepoSandbox (agent containers, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection of unused images
 cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), the CAs the image trusts, notices
 cli/sandbox-proxy.ts           the install's proxy input and token, opened under the ground lock, and the denial summary at exit with a reason and fix per kind (also the doctor's rule hints and blocked warnings)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
@@ -72,7 +72,7 @@ cli/host-routes.ts             which command lines start no session: help, versi
 cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi, not linked in, outside the workspace root and every folder a sandbox has run in), the one check install, update and a launch share (requireJobPi) and its error (missingPi, also the doctor's pi check), spawning it for host jobs (spawnHostJob) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per install, their hashes kept in seen.json
 cli/versions.ts                pinata version, the tested pi version, the version compare
-cli/commands/status.ts         pinata status as one closing block: the folder, then a row each for the runtime, services, containers, pi folder, proxy, image, overlays, volumes, launches and grants
+cli/commands/status.ts         pinata status as one closing block: the folder, then a row each for the runtime, services, containers, pi folder, proxy, image, volumes, launches and grants
 cli/commands/config.ts         pinata config: the effective config as JSON, the keys the config file sets and the written-back keys of each file
 cli/commands/egress.ts         pinata egress allow, revoke and list
 cli/commands/restart.ts        pinata restart: live-session refusal, the settings read, validated and planned for a missing VM (planAll) before anything is deleted, removeSandbox with the host records of what was in the VM cleared under its locks, then that plan applied (applyAll) with stepsFrontEnd; a failed creation says the VM is gone
@@ -121,17 +121,12 @@ config/parent-proxy.ts         the parent proxy read from HTTPS_PROXY and NO_PRO
 ```
 workspace/index.ts             public surface
 workspace/types.ts             the workspace shape
-workspace/discover.ts          the folder to mount (the git root, else the cwd), its git dir and common dir from the files, and the overlay search of the launch repository
-workspace/overlay-scan.ts      the budgeted search of the launch repository for overlay folders, not descending into overlaid build output
-workspace/walk.ts              the budgeted level-by-level directory walk
-workspace/paths.ts             path ordering by depth and code unit
-workspace/overlay-markers.ts   which marker file gives which build output folder
+workspace/discover.ts          the folder to mount (the git root, else the cwd), its git dir and common dir from the files
 workspace/guard.ts             the refusal of protected folders (home, pi and pinata dirs, credential, system and image dirs) and the host session dir check
 workspace/mounts.ts            the protected path table
 workspace/roots.ts             the workspaceRoot checks (unset, missing, the home or above it, the guard's protected paths and system dirs, outside the root, a git dir or common dir outside the root; the host launch runs only the inside-the-root ones) and the checked root the VM shares
 workspace/binds.ts             the mounts.binds sources on the host: resolved, must exist, the root guard, and the folder the VM must share
 workspace/pi-session-dir.ts    pi's session slug and the host session dir choice
-workspace/created.ts           removal of recorded created folders
 workspace/sandbox-reach.ts     the roots a sandbox can write (sandboxWriteRoots: the checked workspace root, the folders one has run in and the roots those runs mounted) and whether a path lies in them
 workspace/git/layout.ts        the nearest folder with a .git entry, and the git dir and common dir read from the files
 ```
@@ -170,10 +165,10 @@ backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and t
 ```
 container/index.ts             public surface
 container/spec.ts              the container spec: mounts (the workspace root read-write), the install's network, the forwarder's service ports and host, service volumes left out of the hand-over, env (env.set under pinata's variables, the hand-over wait flag), the env.allow names env.set leaves forwarded, labels, the mount table check (no target twice, no mount over the image's paths)
-container/volumes.ts           the volume plan: agent, overlay and mounts.volumes names, targets and labels; userVolume names a volume shared by every folder of the state dir
-container/names.ts             container and volume names (agent, cache and shared volumes), the pod and service container names; the install's agent volume name
+container/volumes.ts           the volume plan: agent and mounts.volumes names and targets; userVolume names a volume shared by every folder of the state dir
+container/names.ts             container and volume names (agent and shared volumes), the pod and service container names; the install's agent volume name
 container/services.ts          ensureServices and stopServices for the install: one pod on the install's network under the services alias, the service specs, the volume hand-over to each service user, the ready wait with its log tail, decide (fresh, refresh or keep by services hash) and the stop of all services at once; serviceVolumes, the service volumes the config names
-container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over (chownRoots, also for the pod) (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker and the forwarder's status, the exited-during-startup error
+container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, volume hand-over (chownRoots, also for the pod) (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker and the forwarder's status, the exited-during-startup error
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
 container/clipboard.ts         the clipboard bridges: OSC 52 copies teed to pbcopy, pasted image paths and Ctrl+V images or image files copied into /tmp/pi-paste, an OSC 9 notice when an image import fails, held by the copy tee until pi's output is between escape sequences
 container/host-paths.ts        visibleInside: whether the sandbox sees a host path at the same path
@@ -311,7 +306,7 @@ shared/liveness.ts             the liveness rule: pid, boot time and process sta
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
 shared/paths.ts                host agent dir, pinata's folder <agent dir>/pinata/ (config.json, state/, with PINATA_STATE_DIR made absolute and real), `launcher/` root, path containment and the outermost of a path list
 shared/state-layout.ts         every path under the state dir, and the guest paths, trees and mount points inside the container
-shared/repo-state.ts           per-repository record files: repo.json with its mount root and the workspace root the launch mounted, created folders, leftovers, forgetRepo
+shared/repo-state.ts           per-repository record files: repo.json with its mount root and the workspace root the launch mounted, forgetRepo
 shared/regular-file.ts         safe reads of regular files
 shared/placeholder.ts          the placeholder format and the JWT shape
 shared/secret-name.ts          secret-looking names, auth-like headers, URL userinfo and credential-shaped values
@@ -367,15 +362,13 @@ tests/config/schema.test.ts          schema and key spec agree, bounds included
 tests/config/validate.test.ts        validation messages
 tests/config/write-back.test.ts      writeBack: defaults, exclude, add, override, enabled, the ceiling and the value specs
 tests/config/vm.test.ts              vm bounds and resources within vm
-tests/workspace/discover.test.ts     discovery: the git root, the git dir and common dir from the files, the overlay search
+tests/workspace/discover.test.ts     discovery: the git root, the git dir and common dir from the files
 tests/workspace/guard.test.ts        the workspace guard
 tests/workspace/mounts.test.ts       the protected path table
-tests/workspace/paths.test.ts        path ordering
 tests/workspace/roots.test.ts        workspaceRoot: the unset and launch refusals, the checked root, the home, protected and system dirs, links
 tests/workspace/sandbox-reach.test.ts  the roots a sandbox can write: the workspace root and the recorded folders
 tests/workspace/binds.test.ts        mounts.binds sources: resolution, the folder to share, the refusals
 tests/workspace/pi-session-dir.test.ts  slug and host session dir choice
-tests/workspace/created-dirs.test.ts  created folder removal
 tests/backend/conformance.ts         the backend conformance suite
 tests/backend/colima.conformance.test.ts  the suite on the in-memory engine
 tests/backend/fake-backend.conformance.test.ts  the suite on the fake backend
@@ -501,7 +494,7 @@ tests/cli/launch-sessions.test.ts    session end and the sweep
 tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit, with the allowlist the launch started with
 tests/cli/sweep.test.ts              the sweep of unused repositories and of the state dir
 tests/cli/launch-wiring.test.ts      launch wiring, no leaks, and the file cache watch around pi
-tests/cli/launch-workspace.test.ts   the workspace root bound read-write, the git dir outside it refused, a plain folder without overlays, the overlay notices
+tests/cli/launch-workspace.test.ts   the workspace root bound read-write, the git dir outside it refused, a plain folder with no volume in it
 tests/cli/launch-mounts.test.ts      binds at launch (VM needs and shares, the read-only mount, refusals before the engine) and setup (order, env, failure, doctor skip)
 tests/cli/prepare.test.ts            the preparation lock (waiting line, dead holder, abort) and runSetup
 tests/cli/mcp-sign-in.test.ts        the launch-start MCP sign-in

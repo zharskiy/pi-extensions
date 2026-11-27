@@ -21,7 +21,7 @@ export const defaultConfig = (): SandboxConfig => ({
   credentials: { rules: [], derive: { enabled: true } },
   egress: { allow: [], deny: [], privateHosts: [] },
   tls: { extraCa: [] },
-  mounts: { volumes: [], binds: [], autoOverlays: true },
+  mounts: { volumes: [], binds: [] },
   env: { allow: TERMINAL_VARIABLES, set: {} },
   resources: { pids: DEFAULT_PIDS },
   vm: { releaseFileCache: true },

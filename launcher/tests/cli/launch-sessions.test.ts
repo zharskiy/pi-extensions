@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { lstat, mkdir, readdir, readFile, utimes } from "node:fs/promises";
+import { lstat, readdir, readFile, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
@@ -12,7 +12,7 @@ import { withSandbox } from "../../cli/launch.ts";
 import { beginLaunch, finishLaunch } from "../../cli/launches.ts";
 import { withPrepareLock } from "../../cli/prepare.ts";
 import { liveLaunches, registerLaunch } from "../../grants/index.ts";
-import { processMark, recordCreatedDirs, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { FAKE_NETWORK } from "../support/fake-backend.ts";
 import { createFakeBackend, createHarness, piSessions, sweepNow } from "./harness.ts";
 
@@ -84,7 +84,6 @@ describe("the end of a session", () => {
     expect(harness.proxyStops()).toBe(2);
     expect(left).toEqual(before);
     expect(left).not.toContain(token);
-    expect(left).not.toContain(files.created);
     expect(left.filter((path) => /\/git\/[0-9a-f]{16}$/.test(path))).toEqual([]);
     expect(await lstat(join(harness.repoRoot, ".git", "commondir")).catch(() => undefined)).toBeUndefined();
     expect(await readFile(files.record, "utf8")).toContain(harness.repoRoot);
@@ -233,13 +232,8 @@ describe("the cleanup at the end of a folder's last session", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const own = await openContext(harness.deps, "host");
-    const mountDir = join(harness.repoRoot, "created-mount");
 
     await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
-
-    await mkdir(mountDir);
-
-    await recordCreatedDirs(harness.stateDir, own.context.repoHash, [mountDir]);
 
     const launches = [
       await beginLaunch(harness.deps, own.context, () => undefined),
@@ -261,7 +255,6 @@ describe("the cleanup at the end of a folder's last session", () => {
     ]);
 
     expect(await liveLaunches(harness.stateDir)).toEqual([]);
-    expect(await exists(mountDir)).toBe(false);
     expect(fake.relays.size).toBe(0);
     expect(fake.networks.has(FAKE_NETWORK)).toBe(false);
     expect(harness.proxyStops()).toBeGreaterThan(0);
@@ -271,15 +264,16 @@ describe("the cleanup at the end of a folder's last session", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const own = await openContext(harness.deps, "host");
-    const mountDir = join(harness.repoRoot, "created-mount");
+    const leftover = fake.addContainer({
+      name: "pinata-leftover",
+      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: own.context.repoHash },
+      state: "stopped",
+      image: "x",
+    });
     const release = { now: (): void => undefined };
     const held = new Promise<void>((resolve) => {
       release.now = resolve;
     });
-
-    await mkdir(mountDir);
-
-    await recordCreatedDirs(harness.stateDir, own.context.repoHash, [mountDir]);
 
     const launch = await beginLaunch(harness.deps, own.context, () => undefined);
     const lock = { stateDir: harness.stateDir, repoHash: own.context.repoHash, progress: () => undefined };
@@ -297,7 +291,7 @@ describe("the cleanup at the end of a folder's last session", () => {
 
     await sleep(300);
 
-    expect(await exists(mountDir)).toBe(true);
+    expect(fake.containers.has(leftover)).toBe(true);
     expect(harness.stderr()).toContain(CLEANUP_WAITING);
 
     release.now();
@@ -306,7 +300,7 @@ describe("the cleanup at the end of a folder's last session", () => {
 
     await finished;
 
-    expect(await exists(mountDir)).toBe(false);
+    expect(fake.containers.has(leftover)).toBe(false);
   });
 });
 

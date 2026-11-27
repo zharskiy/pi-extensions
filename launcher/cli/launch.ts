@@ -37,7 +37,7 @@ import {
   probeSessionsShare,
   readyHostSessions,
 } from "./host-sessions.ts";
-import { hostPathNotices, launchNotices, proxyDetail } from "./launch-notices.ts";
+import { hostPathNotices, proxyDetail } from "./launch-notices.ts";
 import { beginLaunch, finishLaunch } from "./launches.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { writeOnce } from "./notices.ts";
@@ -346,10 +346,11 @@ const prepareContainer = async (
   const { image, route } = parts;
   const { render } = parts.files;
 
-  await writeOnce(deps, context.stateDir, [
-    ...render.notices.map((notice) => `pinata: ${notice}`),
-    ...launchNotices(context),
-  ]);
+  await writeOnce(
+    deps,
+    context.stateDir,
+    render.notices.map((notice) => `pinata: ${notice}`),
+  );
 
   cancelled.throwIfAborted();
 
@@ -370,20 +371,16 @@ const prepareContainer = async (
 
   confirmBinds(input.binds);
 
-  const { id, spec, notices } = await withAgentLock(agentLockOf(input), () =>
+  const { id, spec } = await withAgentLock(agentLockOf(input), () =>
     startLaunchContainer({
       backend,
-      stateDir: context.stateDir,
       spec: built,
       afterCreate: (created) => probeSessionsShare(backend, created, sessions),
       pinnedImage: context.effective.config.image.digest !== undefined,
     }),
   );
 
-  writeNotices(deps, [
-    ...notices,
-    ...(await hostPathNotices(input.piArgs, context.workspace.cwd, spec.mounts)),
-  ]);
+  writeNotices(deps, await hostPathNotices(input.piArgs, context.workspace.cwd, spec.mounts));
 
   return { containerId: id, spec, image };
 };

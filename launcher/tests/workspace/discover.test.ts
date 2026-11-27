@@ -5,8 +5,7 @@ import { discoverWorkspace, workspaceFolder } from "../../workspace/index.ts";
 import { git } from "../support/git.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
-const discoverAt = async (cwd: string, options?: Parameters<typeof discoverWorkspace>[1]) =>
-  discoverWorkspace(await workspaceFolder(cwd), options);
+const discoverAt = async (cwd: string) => discoverWorkspace(await workspaceFolder(cwd));
 
 const temporaryFolder = async () => realpath(await tempDir("workspace"));
 
@@ -22,11 +21,11 @@ const createRepo = async (path?: string) => {
   return repo;
 };
 
-const markRepo = (path: string) => mkdir(join(path, ".git"), { recursive: true });
-
 describe("discoverWorkspace", () => {
-  it("finds the toplevel and the .git common dir from the repository root", async () => {
+  it("finds the toplevel and the .git common dir from the repository root, and nothing more", async () => {
     const repo = await createRepo();
+
+    await writeFile(join(repo, "package-lock.json"), "{}");
 
     expect(await discoverAt(repo)).toEqual({
       cwd: repo,
@@ -34,7 +33,6 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
-      overlays: [],
     });
   });
 
@@ -135,18 +133,13 @@ describe("discoverWorkspace", () => {
     );
   });
 
-  it("uses the folder itself outside git and searches nothing in it", async () => {
+  it("uses the folder itself outside git", async () => {
     const folder = await temporaryFolder();
-
-    await mkdir(join(folder, "app"));
-
-    await writeFile(join(folder, "app", "package-lock.json"), "{}");
 
     expect(await discoverAt(folder)).toEqual({
       cwd: folder,
       repoRoot: folder,
       isGitRepo: false,
-      overlays: [],
     });
   });
 
@@ -163,151 +156,5 @@ describe("discoverWorkspace", () => {
     const folder = await temporaryFolder();
 
     await expect(discoverAt(join(folder, "missing"))).rejects.toThrow("missing");
-  });
-});
-
-describe("the overlay search", () => {
-  it("overlays the build output each marker names, skipping a marker folder whose output is a file", async () => {
-    const repo = await createRepo();
-    const folders = ["api", "cli", "app", "plain"].map((name) => join(repo, name));
-
-    await Promise.all(folders.map((dir) => mkdir(dir)));
-
-    await Promise.all([
-      writeFile(join(repo, "api", "uv.lock"), ""),
-      writeFile(join(repo, "api", "poetry.lock"), ""),
-      writeFile(join(repo, "cli", "Cargo.lock"), ""),
-      writeFile(join(repo, "app", "settings.gradle.kts"), ""),
-      writeFile(join(repo, "plain", "Pipfile.lock"), ""),
-      writeFile(join(repo, "plain", ".venv"), ""),
-      writeFile(join(repo, "settings.gradle"), ""),
-    ]);
-
-    expect((await discoverAt(repo)).overlays).toEqual([
-      join(repo, ".gradle"),
-      join(repo, "api", ".venv"),
-      join(repo, "app", ".gradle"),
-      join(repo, "cli", "target"),
-    ]);
-  });
-
-  it("overlays only the launch repository, not its siblings in the workspace root", async () => {
-    const root = await temporaryFolder();
-    const repo = await createRepo(join(root, "repo"));
-    const sibling = await createRepo(join(root, "sibling"));
-
-    await Promise.all([
-      writeFile(join(repo, "package-lock.json"), "{}"),
-      writeFile(join(sibling, "package-lock.json"), "{}"),
-      writeFile(join(root, "package-lock.json"), "{}"),
-    ]);
-
-    expect((await discoverAt(join(repo, "src"))).overlays).toEqual([join(repo, "node_modules")]);
-  });
-
-  it("finds lockfile folders in a repository, skipping a linked node_modules", async () => {
-    const repo = await createRepo();
-
-    await Promise.all(
-      [join(repo, "web"), join(repo, "linked"), join(repo, "web", "node_modules")].map((dir) =>
-        mkdir(dir, { recursive: true }),
-      ),
-    );
-
-    await Promise.all([
-      writeFile(join(repo, "web", "pnpm-lock.yaml"), ""),
-      writeFile(join(repo, "linked", "yarn.lock"), ""),
-      writeFile(join(repo, "bun.lockb"), ""),
-    ]);
-
-    await symlink(join(repo, "web", "node_modules"), join(repo, "linked", "node_modules"));
-
-    expect((await discoverAt(repo)).overlays).toEqual(
-      [repo, join(repo, "web")].map((dir) => join(dir, "node_modules")),
-    );
-  });
-
-  it("adds package folders below a lockfile folder of the same repository, at most 256", async () => {
-    const repo = await createRepo();
-    const packages = Array.from({ length: 257 }, (_, index) => join(repo, "packages", `p${index}`));
-    const plain = [join(repo, "node_modules", "dep"), join(repo, "nested", "pkg")];
-
-    await Promise.all([...packages, ...plain].map((dir) => mkdir(dir, { recursive: true })));
-
-    await markRepo(join(repo, "nested"));
-
-    await Promise.all(
-      [
-        join(repo, "npm-shrinkwrap.json"),
-        ...[...packages, ...plain].map((dir) => join(dir, "package.json")),
-      ].map((file) => writeFile(file, "{}")),
-    );
-
-    const { overlays = [] } = await discoverAt(repo);
-
-    expect(overlays).toHaveLength(257);
-    expect(overlays[0]).toBe(join(repo, "node_modules"));
-    expect(
-      overlays.every(
-        (dir) => dir === join(repo, "node_modules") || dir.startsWith(join(repo, "packages", "p")),
-      ),
-    ).toBe(true);
-  });
-
-  it("does not search build output an overlay hides, so large output fits the budget", async () => {
-    const repo = await createRepo();
-    const venv = join(repo, "app", ".venv");
-
-    await Promise.all(
-      Array.from({ length: 8 }, (_, index) => mkdir(join(venv, `pkg${index}`), { recursive: true })),
-    );
-
-    await writeFile(join(repo, "app", "uv.lock"), "");
-
-    expect(await discoverAt(repo, { scanBudget: 8 })).toMatchObject({ overlays: [venv] });
-  });
-
-  it("skips the .pi folder, so agent worktrees get no overlays", async () => {
-    const repo = await createRepo();
-    const agent = join(repo, ".pi", "worktrees", "agent-1");
-
-    await markRepo(agent);
-
-    await writeFile(join(agent, "package-lock.json"), "{}");
-
-    expect((await discoverAt(repo)).overlays).toEqual([]);
-  });
-
-  it("searches nothing when overlays are off", async () => {
-    const repo = await createRepo();
-
-    await writeFile(join(repo, "package-lock.json"), "{}");
-
-    expect((await discoverAt(repo, { overlays: false, scanBudget: 1 })).overlays).toEqual([]);
-  });
-
-  it("drops the overlays of a repository too large to search, and says so", async () => {
-    const repo = await createRepo();
-
-    await Promise.all(["a", "b", "c"].map((name) => mkdir(join(repo, name, "deep"), { recursive: true })));
-
-    await writeFile(join(repo, "package-lock.json"), "{}");
-
-    expect(await discoverAt(repo, { scanBudget: 3 })).toMatchObject({
-      overlays: [],
-      overlaysTruncated: true,
-    });
-    expect((await discoverAt(repo)).overlays).toEqual([join(repo, "node_modules")]);
-  });
-
-  it("drops every overlay and says so when there are more than 512", async () => {
-    const repo = await createRepo();
-    const apps = Array.from({ length: 513 }, (_, index) => join(repo, `app${index}`));
-
-    await Promise.all(apps.map((dir) => mkdir(dir)));
-
-    await Promise.all(apps.map((dir) => writeFile(join(dir, "yarn.lock"), "")));
-
-    expect(await discoverAt(repo)).toMatchObject({ overlays: [], overlaysCapped: true });
   });
 });

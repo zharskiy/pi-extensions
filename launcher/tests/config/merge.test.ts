@@ -37,7 +37,6 @@ const COMPLETE_CONFIG: UserConfig = {
   mounts: {
     volumes: ["~/.cache/pip", { target: "/opt/data", name: "data" }],
     binds: [{ source: "/etc/corp", target: "/etc/corp" }],
-    autoOverlays: false,
   },
   setup: [["npm", "ci"]],
   services: [{ name: "db", command: ["db"], memoryGiB: 1 }],

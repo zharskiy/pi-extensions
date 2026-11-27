@@ -19,11 +19,11 @@ const loadWith = async (config?: unknown) => {
 };
 
 describe("mounts.volumes", () => {
-  it("defaults to no volumes, no binds and node_modules overlays on", async () => {
+  it("defaults to no volumes and no binds", async () => {
     const { config, sources } = await loadWith();
 
-    expect(defaultConfig().mounts).toEqual({ volumes: [], binds: [], autoOverlays: true });
-    expect(config.mounts).toMatchObject({ volumes: [], binds: [], autoOverlays: true });
+    expect(defaultConfig().mounts).toEqual({ volumes: [], binds: [] });
+    expect(config.mounts).toEqual({ volumes: [], binds: [] });
     expect(sources["mounts.volumes"]).toBe("default");
   });
 
@@ -218,16 +218,12 @@ describe("setup", () => {
 });
 
 describe("mounts.autoOverlays", () => {
-  it("is taken from the config", async () => {
-    const { config, sources } = await loadWith({ mounts: { autoOverlays: false } });
-
-    expect(config.mounts.autoOverlays).toBe(false);
-    expect(sources["mounts.autoOverlays"]).toBe("config");
-  });
-
-  it("must be true or false", () => {
-    expect(() => validateConfig({ mounts: { autoOverlays: "off" } })).toThrow(
-      "config: mounts.autoOverlays must be true or false",
+  it("is not a known key, whatever its value", async () => {
+    await expect(loadWith({ mounts: { autoOverlays: true } })).rejects.toThrow(
+      "config: mounts.autoOverlays is not a known key",
+    );
+    expect(() => validateConfig({ mounts: { autoOverlays: false } })).toThrow(
+      "config: mounts.autoOverlays is not a known key",
     );
   });
 });

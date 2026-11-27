@@ -782,7 +782,6 @@ const CONFIG_SPEC: ObjectSpec = {
           check: distinctVolumeNames,
         },
         binds: { type: "array", items: BIND },
-        autoOverlays: flag,
       }),
       check: apartTargets,
     },

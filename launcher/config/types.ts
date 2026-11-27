@@ -68,7 +68,6 @@ interface BindEntry {
 interface MountsConfig {
   volumes: Array<string | VolumeEntry>;
   binds: BindEntry[];
-  autoOverlays: boolean;
 }
 
 interface ResourcesConfig {

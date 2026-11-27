@@ -64,7 +64,6 @@ The file applies to every pi you start in the sandbox, in every folder. There ar
 | `credentials.derive.hosts` | Read credentials only for these hosts. | every host |
 | `credentials.rules` | Credentials you define by hand. | `[]` |
 | `tls.extraCa` | Extra CA certificates to trust. | `[]` |
-| `mounts.autoOverlays` | Give build output folders their own volume. | `true` |
 | `mounts.volumes` | Folders kept in volumes shared by all your sandboxes ([below](#volumes)). | `[]` |
 | `mounts.binds` | Host files or folders mounted read-only inside ([below](#read-only-binds)). | `[]` |
 | `setup` | Commands run in the sandbox at every launch, before pi starts ([below](#setup-commands)). | `[]` |
@@ -183,22 +182,19 @@ The base image build reaches the network straight from the VM, outside the allow
 
 ## Build output and caches
 
-### Build output overlays
+### Build output
 
-With `mounts.autoOverlays` on, these folders get a volume of their own when a matching file sits in the same folder:
+`node_modules`, `.venv`, `target`, `.gradle` and every other build output folder are ordinary folders in the shared tree: the sandbox reads and writes the copy on your Mac. What an install or a build inside makes is built for Linux, so native modules and binaries from inside may not run on your Mac, nor yours inside. A build that writes very many files there is safe through the [file cache release](#file-cache).
 
-| lockfile in the same folder | folder |
-| --- | --- |
-| `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb` | `node_modules` |
-| `uv.lock`, `poetry.lock`, `Pipfile.lock` | `.venv` |
-| `Cargo.lock` | `target` |
-| `settings.gradle`, `settings.gradle.kts` | `.gradle` |
+`mounts.autoOverlays` is not a known key: a config that still holds it stops the launch with `config: mounts.autoOverlays is not a known key`. Delete the key from the config.
 
-This keeps Linux builds apart from your Mac's. Inside, the host copy is hidden, so run your install command once there. Maven `target/` and Gradle `build/` are not overlaid and stay on your Mac's folder: their builds remove and recreate them, and a build tool that deletes its output folder fails on a volume mounted there (`mvn clean`, for example, fails with `EBUSY`). A build that writes very many files there is safe through the [file cache release](#file-cache).
+Volumes named `pinata-cache-…` left in the VM from build output volumes stay there until `pinata restart`, which deletes the VM with every volume in it. To remove only those volumes:
 
-If there are more than 512 such folders, nothing is overlaid and a notice says so. Only the repository pi starts in is searched, never the other projects in the workspace root. A repository too large to search (over 50,000 directories) gets no overlays and a notice, and so does a folder outside git: `pinata: <folder> is not in a git repository; build output is not overlaid, the host copies are used`. Set `mounts.autoOverlays` to `false` to use your Mac's copies.
+```sh
+docker --context colima-pinata volume ls -q --filter label=pinata.cache-path | xargs docker --context colima-pinata volume rm
+```
 
-If an overlay folder is missing, pinata creates it empty on your Mac. It removes it again, if still empty, after the folder's last session. `pinata restart` removes the overlay volumes.
+Docker keeps a volume that a running session uses.
 
 ### Volumes
 
@@ -259,7 +255,7 @@ Every target of `mounts.volumes` and `mounts.binds` follows these rules, checked
 | `~/.pi`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.colima`, `~/.kube`, `~/.config`, `~/.local/bin` and anything inside them | no |
 | a path with an empty, `.` or `..` part | no |
 | a target listed twice, or one inside another target | no |
-| a target inside, or above, the folder you start pi in, its git dirs, a build output overlay or pi's session folder | no, the launch stops with a `mounts:` error |
+| a target inside, or above, the folder you start pi in, its git dirs or pi's session folder | no, the launch stops with a `mounts:` error |
 
 The rules read a target as text, after normalisation; pinata does not resolve it inside the image. A symbolic link in the image at or above a target leads the mount to where the link points, which can be a reserved tree: Debian's own `/etc/localtime` and the entries of `/etc/alternatives`, for example, point into `/usr`. Only your config names targets and only the image, which your `image.dockerfile` lines or your pinned image change, holds such links, so this stays within what you already control. Pick targets that are plain folders in the image.
 

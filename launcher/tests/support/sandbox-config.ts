@@ -7,7 +7,7 @@ export const sandboxConfig = ({ mounts, ...overrides }: ConfigOverrides = {}): S
   credentials: { rules: [], derive: { enabled: true } },
   egress: { allow: ["registry.npmjs.org"], deny: [], privateHosts: [] },
   tls: { extraCa: [] },
-  mounts: { volumes: [], binds: [], autoOverlays: true, ...mounts },
+  mounts: { volumes: [], binds: [], ...mounts },
   setup: [],
   services: [],
   env: { allow: ["TERM", "LANG"], set: {} },

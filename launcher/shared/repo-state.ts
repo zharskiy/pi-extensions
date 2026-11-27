@@ -1,30 +1,13 @@
-import { access, readdir, rm, stat } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
-import { LauncherError } from "./errors.ts";
-import { readJsonFile, readJsonObject, writeJsonFile } from "./json-file.ts";
+import { readJsonObject, writeJsonFile } from "./json-file.ts";
 import { stateLayout } from "./state-layout.ts";
 
 const PRIVATE_MODE = 0o600;
 
 const REPO_HASH = /^[0-9a-f]{64}$/;
 
-const queues = new Map<string, Promise<void>>();
-
 const filesOf = (stateDir: string, repoHash: string) => stateLayout(stateDir).repo(repoHash);
-
-const queued = (path: string, step: () => Promise<void>) => {
-  const next = (queues.get(path) ?? Promise.resolve()).catch(() => undefined).then(step);
-
-  queues.set(path, next);
-
-  return next;
-};
-
-const exists = (path: string) =>
-  access(path).then(
-    () => true,
-    () => false,
-  );
 
 export interface RepoRecord {
   root: string;
@@ -91,52 +74,6 @@ export const knownRepos = async (stateDir: string) => {
     .filter((entry) => entry.isDirectory() && REPO_HASH.test(entry.name))
     .map((entry) => entry.name);
 };
-
-const readList = async <T>(path: string, valid: (value: unknown) => value is T) => {
-  const stored = await readJsonFile<unknown>(path);
-
-  if (stored === undefined) {
-    return [];
-  }
-
-  if (!Array.isArray(stored)) {
-    throw new LauncherError(`${path}: not a list`, "fix or remove the file");
-  }
-
-  return stored.filter(valid);
-};
-
-const writeList = async <T>(path: string, values: T[]) => {
-  if (values.length === 0) {
-    await rm(path, { force: true });
-
-    return;
-  }
-
-  await writeJsonFile(path, values, { mode: PRIVATE_MODE });
-};
-
-const isPath = (value: unknown): value is string => typeof value === "string";
-
-export const readCreatedDirs = (stateDir: string, repoHash: string) =>
-  readList(filesOf(stateDir, repoHash).created, isPath);
-
-export const writeCreatedDirs = (stateDir: string, repoHash: string, dirs: string[]) =>
-  writeList(filesOf(stateDir, repoHash).created, dirs);
-
-export const recordCreatedDirs = (stateDir: string, repoHash: string, dirs: string[]) =>
-  queued(filesOf(stateDir, repoHash).created, async () => {
-    if (dirs.length === 0) {
-      return;
-    }
-
-    const known = await readCreatedDirs(stateDir, repoHash);
-
-    await writeList(filesOf(stateDir, repoHash).created, [...new Set([...known, ...dirs])]);
-  });
-
-export const hasRepoLeftovers = (stateDir: string, repoHash: string) =>
-  exists(filesOf(stateDir, repoHash).created);
 
 export const forgetRepo = (stateDir: string, repoHash: string) =>
   rm(filesOf(stateDir, repoHash).directory, { recursive: true, force: true });

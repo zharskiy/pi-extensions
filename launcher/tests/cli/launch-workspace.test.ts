@@ -10,12 +10,6 @@ import { repoHash, repoRecordOf } from "../../shared/index.ts";
 import { sandboxWriteRoots } from "../../workspace/index.ts";
 import { createFakeBackend, createHarness, type HarnessOptions } from "./harness.ts";
 
-const overlayNotice = (places: string) =>
-  `pinata: node_modules overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`;
-
-const CAPPED_NOTICE =
-  "pinata: more than 512 build output directories; overlays disabled, the host copies are used";
-
 const occurrences = (text: string, line: string) => text.split("\n").filter((entry) => entry === line).length;
 
 interface Layout {
@@ -42,11 +36,8 @@ const workspaceHarness = async (layout: Layout, options: HarnessOptions = {}) =>
   return { ...harness, work, deps: { ...harness.deps, cwd: join(work, "a") } };
 };
 
-const notGitNotice = (folder: string) =>
-  `pinata: ${folder} is not in a git repository; build output is not overlaid, the host copies are used`;
-
 describe("pi in a project of the workspace root", () => {
-  it("binds the whole root read-write, nothing narrower, and overlays only the started project", async () => {
+  it("binds the whole root read-write and mounts nothing narrower, also beside lockfiles", async () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness(
       { repos: ["a", "b"], lockfiles: ["a/package-lock.json", "b/package-lock.json"] },
@@ -60,14 +51,11 @@ describe("pi in a project of the workspace root", () => {
     const mounts = fake.created[0]?.spec?.mounts ?? [];
     const inRoot = mounts.filter((mount) => mount.target.startsWith(harness.work));
 
-    expect(inRoot).toEqual([
-      { source: harness.work, target: harness.work, readOnly: false, kind: "bind" },
-      expect.objectContaining({ target: join(harness.work, "a", "node_modules"), kind: "volume" }),
-    ]);
-    expect(occurrences(harness.stderr(), overlayNotice("1 directory"))).toBe(1);
+    expect(inRoot).toEqual([{ source: harness.work, target: harness.work, readOnly: false, kind: "bind" }]);
+    expect(harness.stderr()).not.toContain("overlaid");
   });
 
-  it("launches in a folder of the root outside git with no overlays and one notice", async () => {
+  it("launches in a folder of the root outside git with no volume in it and no notice", async () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness(
       { repos: ["a"], lockfiles: ["notes/package-lock.json"] },
@@ -83,8 +71,7 @@ describe("pi in a project of the workspace root", () => {
     expect(
       mounts.filter((mount) => mount.kind === "volume" && mount.target.startsWith(harness.work)),
     ).toEqual([]);
-    expect(occurrences(harness.stderr(), notGitNotice(notes))).toBe(1);
-    expect(occurrences(harness.stderr(), notGitNotice(harness.work))).toBe(1);
+    expect(harness.stderr()).not.toContain("git repository");
     expect(fake.created[0]?.spec?.workdir).toBe(notes);
   });
 
@@ -167,69 +154,5 @@ describe("pi in a project of the workspace root", () => {
     expect(occurrences(harness.stderr(), refusal)).toBe(2);
     expect(await runPinata(["status"], harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(0);
-  });
-});
-
-describe("the overlay notice", () => {
-  it("prints the notice once per value, again only when the overlays change", async () => {
-    const fake = createFakeBackend();
-    const harness = await workspaceHarness(
-      { repos: ["a", "b"], lockfiles: ["a/package-lock.json"] },
-      { backend: () => fake.backend },
-    );
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(await run([], harness.deps)).toBe(0);
-    expect(occurrences(harness.stderr(), overlayNotice("1 directory"))).toBe(1);
-
-    await writeFile(join(harness.work, "a", "Cargo.lock"), "");
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(harness.stderr()).toContain(
-      "pinata: node_modules, target overlaid in 2 directories; the host copies are hidden",
-    );
-  });
-
-  it("counts several directories in the plural", async () => {
-    const fake = createFakeBackend();
-    const harness = await workspaceHarness(
-      { repos: ["a", "b"], lockfiles: ["a/package-lock.json", "a/web/pnpm-lock.yaml", "a/tools/yarn.lock"] },
-      { backend: () => fake.backend },
-    );
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(occurrences(harness.stderr(), overlayNotice("3 directories"))).toBe(1);
-  });
-
-  it("says overlays are off when there are more than 512", async () => {
-    const fake = createFakeBackend();
-    const lockfiles = Array.from({ length: 513 }, (_, index) => `a/p${index}/package-lock.json`);
-    const harness = await workspaceHarness({ repos: ["a", "b"], lockfiles }, { backend: () => fake.backend });
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(occurrences(harness.stderr(), CAPPED_NOTICE)).toBe(1);
-    expect(harness.stderr()).not.toContain("overlaid in");
-  });
-
-  it("stays silent when mounts.autoOverlays is off, in git or outside it", async () => {
-    const fake = createFakeBackend();
-    const harness = await workspaceHarness(
-      { repos: ["a", "b"], lockfiles: ["a/package-lock.json"] },
-      { backend: () => fake.backend },
-    );
-
-    await harness.writeJson(harness.userConfigFile, { mounts: { autoOverlays: false } });
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(await run([], { ...harness.deps, cwd: harness.work })).toBe(0);
-    expect(harness.stderr()).not.toContain("overlaid");
-  });
-
-  it("stays silent without overlay markers", async () => {
-    const fake = createFakeBackend();
-    const harness = await workspaceHarness({ repos: ["a", "b"] }, { backend: () => fake.backend });
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(harness.stderr()).not.toContain("overlaid in");
   });
 });

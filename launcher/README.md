@@ -142,7 +142,7 @@ The `pi` link then runs this checkout's sources, `~/.local/bin/pinata` links to 
 
 ## Everyday use
 
-In the table, *host pi* is pi's managed install on your Mac, or without one the pi in npm's global packages. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
+In the table, *host pi* is pi's managed install on your Mac, or without one the pi in npm's global packages. A *grant* is a host you allowed. The *agent* volume is storage the VM keeps for pi's own files.
 
 | command | what it does |
 | --- | --- |
@@ -161,7 +161,7 @@ In the table, *host pi* is pi's managed install on your Mac, or without one the 
 | `pinata update` | install the latest pinata with npm, then its pinata install --yes |
 | `pinata uninstall [--sandbox]` | remove the sandbox VM, pinata's state, its links, its PATH block and its package in host pi; your config, sessions, pi and colima stay; --sandbox removes only the sandbox VM, the pi link and pinata's state, so pi runs host pi |
 | `pinata init [--yes]` | set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings |
-| `pinata status` | runtime, services, container, proxy, image, launches, grants, overlays, volumes |
+| `pinata status` | runtime, services, container, proxy, image, launches, grants, volumes |
 | `pinata list` | the sandbox VM and the pi sessions it runs, for every folder, without starting it |
 | `pinata config` | the effective config and whether each key comes from the config file or the default |
 | `pinata egress allow <host[:port]>` | allow a host for every session until revoked |
@@ -190,7 +190,7 @@ After a reboot or `pinata stop`, the next `pi` starts the VM again. A failure pr
 - **Only https leaves, and your Mac's `localhost` is out of reach.** Servers you start inside answer on `127.0.0.1`.
 - **Java goes through the proxy.** `~/.m2/settings.xml` points Maven at `pinata-proxy:3128`, with no credentials, and every JDK in the image has the proxy in its `net.properties`. A JDK installed later needs `trust-jdk.sh` ([a JDK in a volume](CONFIGURATION.md#a-jdk-in-a-volume)).
 - **Home lives in memory.** `/home/pi` and `/tmp` are emptied when pi exits. Pi's own files survive in one agent volume that every folder's sandbox shares, so pi's package installs, its in-sandbox settings and, with `sessions.host` off, its sessions are the same whichever folder you start in. `pinata restart` deletes it with the VM once no pi session runs. To keep a tool cache or other data, list its folder in `mounts.volumes`.
-- **Build output has its own copy.** `node_modules`, `.venv`, `target` and `.gradle` get their own volume when a matching lockfile sits beside them ([list](CONFIGURATION.md#build-output-overlays)). Run your install command, such as `npm install`, once inside.
+- **Build output is shared with your Mac.** `node_modules`, `.venv`, `target` and `.gradle` are ordinary folders of your project, so the sandbox and your Mac use the same copy. What an install inside builds is built for Linux ([Build output](CONFIGURATION.md#build-output)).
 - **Large builds keep your Mac's open files in check.** The VM holds one file open on your Mac for each file it has cached from your folders. While pi runs, pinata drops that cache when the count nears your Mac's limit, so a build over a very large tree does not run your Mac out of file descriptors ([File cache](CONFIGURATION.md#file-cache)).
 - **Sessions are shared.** `/resume` on your Mac lists sandbox sessions.
 - **Copy reaches your Mac's clipboard.** What pi copies inside (OSC 52) is also put on the macOS clipboard with `pbcopy`, so it works in terminals that ignore OSC 52. The output still reaches your terminal unchanged.
@@ -203,7 +203,7 @@ All three are on a Mac only; `terminal.clipboard: false` turns them off.
 
 ### Where pi can start
 
-Pi starts in a repository or in a plain folder, anywhere inside the [workspace root](CONFIGURATION.md#workspace-root), and not at all while it is unset. Wherever it starts, the sandbox sees the whole root, read-write. A repository whose git data lies outside the root is refused, since git would not work inside. In a plain folder outside git, build output is not overlaid and a line says so. Pi does not start in your home folder, `/`, system folders or credential folders such as `~/.ssh`.
+Pi starts in a repository or in a plain folder, anywhere inside the [workspace root](CONFIGURATION.md#workspace-root), and not at all while it is unset. Wherever it starts, the sandbox sees the whole root, read-write. A repository whose git data lies outside the root is refused, since git would not work inside. Pi does not start in your home folder, `/`, system folders or credential folders such as `~/.ssh`.
 
 If your home folder is a git repository, pi starts under it only inside a repository of its own.
 

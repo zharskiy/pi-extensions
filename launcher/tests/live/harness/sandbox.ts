@@ -178,13 +178,6 @@ const readAccessLog = async (stateDir: string) => {
     .map((line) => JSON.parse(line) as AccessEntry);
 };
 
-const nonEmptyList = async (path: string) => {
-  const text = await readFile(path, "utf8").catch(() => "[]");
-  const value = JSON.parse(text) as unknown;
-
-  return Array.isArray(value) && value.length === 0 ? [] : [`${path}: ${text.trim()}`];
-};
-
 const collect = () => {
   const chunks: Buffer[] = [];
   const stream = new Writable({
@@ -382,7 +375,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
 
   const leftovers = async () => {
     const layout = stateLayout(stateDir);
-    const files = layout.repo(repoHash);
     const owned = await listContainers({ [LABELS.install]: install });
     const networks = (await listNetworks()).filter(
       (candidate) => candidate.Labels?.[LABELS.install] === install,
@@ -392,7 +384,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     const present = await Promise.all(
       [layout.proxy.record, layout.proxy.token].map((path) => (existsSync(path) ? [path] : [])),
     );
-    const lists = await nonEmptyList(files.created);
 
     return {
       containers: owned,
@@ -403,7 +394,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
         ...daemons.map((pid) => `proxy pid ${pid}`),
         ...launches.map((name) => `launch entry ${name}`),
         ...present.flat(),
-        ...lists,
       ],
     };
   };

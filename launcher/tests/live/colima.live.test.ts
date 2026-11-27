@@ -135,10 +135,7 @@ hooks.describe("colima volume ownership", () => {
     resources: { cpus: 1, memoryGiB: 0.25, pids: 4096 },
     capabilities: ["CHOWN"],
     autoRemove: true,
-    volumeLabels: {},
     ownedPaths: ["/home/pi/.cache", OWNERSHIP_TARGET],
-    guardedPaths: [],
-    notices: [],
   });
 
   hooks.it(
@@ -153,7 +150,6 @@ hooks.describe("colima volume ownership", () => {
       const ensured = await startLaunchContainer({
         backend,
         spec: spec(),
-        stateDir: state.dir,
       });
 
       const written = await execCapture(backend, {
@@ -164,7 +160,6 @@ hooks.describe("colima volume ownership", () => {
         user: SANDBOX_USER,
       });
 
-      hooks.expect(ensured.notices).toEqual([]);
       hooks.expect(written).toEqual({ code: 0, stdout: "1000\n", stderr: "" });
     },
   );
@@ -198,10 +193,7 @@ hooks.describe("colima read-only binds on the share", () => {
     resources: { cpus: 1, memoryGiB: 0.25, pids: 4096 },
     capabilities: ["CHOWN"],
     autoRemove: true,
-    volumeLabels: {},
     ownedPaths: [],
-    guardedPaths: [],
-    notices: [],
   });
 
   const probe = (script: string) =>
@@ -229,7 +221,6 @@ hooks.describe("colima read-only binds on the share", () => {
       await startLaunchContainer({
         backend,
         spec: spec(work, state.git),
-        stateDir: state.dir,
       })
     ).id;
   }, 300_000);
@@ -313,10 +304,7 @@ hooks.describe("colima sandbox image missing-command hint", () => {
     resources: { cpus: 1, memoryGiB: 0.5, pids: 4096 },
     capabilities: ["CHOWN"],
     autoRemove: true,
-    volumeLabels: {},
     ownedPaths: [],
-    guardedPaths: [],
-    notices: [],
   });
 
   hooks.it(
@@ -334,7 +322,6 @@ hooks.describe("colima sandbox image missing-command hint", () => {
       const ensured = await startLaunchContainer({
         backend,
         spec: spec(image.id),
-        stateDir: state.dir,
       });
 
       const probed = await execCapture(backend, {

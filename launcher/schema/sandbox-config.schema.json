@@ -494,10 +494,6 @@
             }
           },
           "description": "Host folders or files mounted read-only in the container. A source outside the folders the sandbox VM shares adds a read-only VM share, which restarts the VM once."
-        },
-        "autoOverlays": {
-          "type": "boolean",
-          "description": "Give every folder with a lockfile or build marker its own volume for the build output (node_modules for npm, pnpm, yarn and bun lockfiles, .venv for uv.lock, poetry.lock and Pipfile.lock, target for Cargo.lock, .gradle for settings.gradle and settings.gradle.kts) so the sandbox never shares it with the host. On by default."
         }
       }
     },

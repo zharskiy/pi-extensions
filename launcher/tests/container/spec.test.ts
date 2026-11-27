@@ -8,7 +8,6 @@ import {
   forwardedEnv,
   forwardedNames,
   mountedVolumes,
-  overlayVolumes,
   volumePlan,
 } from "../../container/index.ts";
 import type { ContainerSpecInput } from "../../container/spec.ts";
@@ -118,71 +117,15 @@ describe("buildContainerSpec", () => {
     ).toBe(agentVolume);
   });
 
-  it("labels the agent volume with no repository, so the sweep and a folder's reset never take it", () => {
-    const other = { cwd: "/work/other", repoRoot: "/work/other", isGitRepo: false };
-    const agentOf = (workspace: typeof other) =>
-      volumePlan({ workspace, config: sandboxConfig(), stateDir: "/state" }).find(
-        (volume) => volume.key === "agent",
-      );
-
-    expect(agentOf({ cwd: repoRoot, repoRoot, isGitRepo: true })).toEqual(agentOf(other));
-    expect(agentOf(other)?.labels).toEqual({});
-  });
-
-  it("lists the repository's agent and overlay volumes", () => {
-    const config = sandboxConfig();
-    const input = specInput({
-      config,
-      workspace: { cwd: repoRoot, repoRoot, isGitRepo: true, overlays: ["/work/repo/node_modules"] },
-    });
+  it("plans the agent volume and the mounts.volumes caches only", () => {
+    const config = sandboxConfig({ mounts: { volumes: ["~/.npm"] } });
+    const input = specInput({ config });
     const volumes = buildContainerSpec(input)
       .mounts.filter((mount) => mount.kind === "volume")
       .map((mount) => mount.source);
 
-    expect(
-      volumePlan({ workspace: input.workspace, config, stateDir: "/state" }).map((volume) => volume.name),
-    ).toEqual(volumes);
-  });
-
-  it("overlays the build output of every marker folder with a volume", () => {
-    const workspace = {
-      cwd: repoRoot,
-      repoRoot,
-      gitCommonDir: "/work/repo/.git",
-      isGitRepo: true,
-      overlays: ["/work/repo/node_modules", "/work/repo/api/.venv"],
-    };
-    const config = sandboxConfig();
-    const input = specInput({ workspace, config });
-    const mounts = buildContainerSpec(input).mounts;
-
-    expect(overlayVolumes(workspace, config, "/state")).toEqual([
-      {
-        path: "/work/repo/node_modules",
-        name: `pinata-cache-${installIdOf("/state")}-${repoHash.slice(0, 12)}-${sha256Hex("node_modules").slice(0, 8)}`,
-      },
-      {
-        path: "/work/repo/api/.venv",
-        name: `pinata-cache-${installIdOf("/state")}-${repoHash.slice(0, 12)}-${sha256Hex("api/.venv").slice(0, 8)}`,
-      },
-    ]);
-    expect(mountAt(mounts, "/work/repo/api/.venv")).toMatchObject({ kind: "volume", readOnly: false });
-    expect(volumePlan({ workspace, config, stateDir: "/state" }).map((volume) => volume.name)).toEqual(
-      mounts.filter((mount) => mount.kind === "volume").map((mount) => mount.source),
-    );
-  });
-
-  it("names no overlay volume when overlays are off", () => {
-    const workspace = {
-      cwd: repoRoot,
-      repoRoot,
-      isGitRepo: false,
-      overlays: ["/work/repo/web/node_modules"],
-    };
-
-    expect(overlayVolumes(workspace, sandboxConfig({ mounts: { autoOverlays: false } }), "/state")).toEqual(
-      [],
-    );
+    expect(volumePlan(config, "/state").map((volume) => volume.key)).toEqual(["agent", "mounts.volumes"]);
+    expect(volumePlan(config, "/state").map((volume) => volume.name)).toEqual(volumes);
   });
 
   it("refuses a bind target inside the workspace root before the engine could make its mount point there", () => {
@@ -429,16 +372,12 @@ describe("buildContainerSpec", () => {
     });
   });
 
-  it("guards only its read-only mounts, none of them inside the workspace root, and has no notice", () => {
-    const workspace = { ...specInput().workspace, overlays: ["/work/repo/node_modules"] };
-    const spec = buildContainerSpec(specInput({ workspace }));
+  it("mounts no volume inside the workspace root, so its build output is the host's", () => {
+    const spec = buildContainerSpec(specInput());
 
-    expect(spec.guardedPaths).toEqual(
-      spec.mounts.filter((mount) => mount.readOnly && mount.kind === "bind").map((mount) => mount.target),
-    );
-    expect(spec.guardedPaths.filter((path) => path.startsWith("/work"))).toEqual([]);
-    expect(mountAt(spec.mounts, "/work/repo/node_modules")?.kind).toBe("volume");
-    expect(spec.notices).toEqual([]);
+    expect(
+      spec.mounts.filter((mount) => mount.kind === "volume" && mount.target.startsWith("/work")),
+    ).toEqual([]);
   });
 
   it("works in the repo root and carries the configured resources", () => {

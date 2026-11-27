@@ -5,14 +5,7 @@ import type { Backend } from "../../backend/index.ts";
 import { LABELS } from "../../backend/index.ts";
 import { sweepOrphans } from "../../cli/sweep.ts";
 import { liveLaunches, newLaunchId, readGrants, registerLaunch } from "../../grants/index.ts";
-import {
-  processMark,
-  readCreatedDirs,
-  repoRecordOf,
-  sha256Hex,
-  stateLayout,
-  writeRepoRecord,
-} from "../../shared/index.ts";
+import { processMark, repoRecordOf, sha256Hex, stateLayout, writeRepoRecord } from "../../shared/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, sweepNow } from "./harness.ts";
 
@@ -24,23 +17,8 @@ const exists = (path: string) =>
 
 const DEAD_PID = 2 ** 22 + 4321;
 
-const leftRepo = async (harness: Awaited<ReturnType<typeof createHarness>>, name: string) => {
-  const root = join(await realpath(await tempDir(name)), "repo");
-  const hash = sha256Hex(root);
-  const files = stateLayout(harness.stateDir).repo(hash);
-  const mountPoint = join(root, "node_modules");
-
-  await mkdir(mountPoint, { recursive: true });
-
-  await harness.writeJson(files.record, { root });
-
-  await harness.writeJson(files.created, [mountPoint]);
-
-  return { root, hash, files, mountPoint };
-};
-
 describe("the sweep of a repository no launch uses", () => {
-  it("removes the mount points it created, and says so when the engine side fails", async () => {
+  it("says so when the engine side fails", async () => {
     const fake = createFakeBackend();
     const backend: Backend = {
       ...fake.backend,
@@ -53,12 +31,22 @@ describe("the sweep of a repository no launch uses", () => {
       },
     };
     const harness = await createHarness({ backend: () => backend });
-    const left = await leftRepo(harness, "failed-engine");
+    const root = join(await realpath(await tempDir("failed-engine")), "repo");
+    const hash = sha256Hex(root);
+
+    await mkdir(root, { recursive: true });
+
+    await harness.writeJson(stateLayout(harness.stateDir).repo(hash).record, { root });
+
+    fake.addContainer({
+      name: "pinata-failed-engine",
+      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: hash },
+      state: "stopped",
+      image: "x",
+    });
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(harness.stderr()).toContain("the sandbox containers were not removed: engine busy");
-    expect(await exists(left.mountPoint)).toBe(false);
-    expect(await readCreatedDirs(harness.stateDir, left.hash)).toEqual([]);
   });
 });
 
@@ -85,7 +73,7 @@ describe("the sweep of what is left in the state dir", () => {
     expect(fake.volumes.has("pinata-agent-volume-root")).toBe(true);
   });
 
-  it("forgets a repository whose folder is gone at the sweep, with its grants, and leaves its volumes to the collection", async () => {
+  it("forgets a repository whose folder is gone at the sweep, with its grants, and keeps its volumes", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const root = join(await realpath(await tempDir("gone")), "repo");
@@ -114,7 +102,7 @@ describe("the sweep of what is left in the state dir", () => {
     expect(fake.volumes.has("pinata-agent-gone")).toBe(true);
 
     expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(true);
   });
 
   it("keeps a repository whose root cannot be checked for another reason than it is missing", async () => {

@@ -7,7 +7,6 @@ export const LABELS = {
   imageDigest: "pinata.image-digest",
   relayInputs: "pinata.relay-inputs",
   sessionDir: "pinata.session-dir",
-  cachePath: "pinata.cache-path",
   role: "pinata.role",
   serviceName: "pinata.service-name",
   servicesHash: "pinata.services-hash",

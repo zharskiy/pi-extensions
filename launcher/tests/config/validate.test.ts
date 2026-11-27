@@ -10,7 +10,7 @@ describe("validateConfig", () => {
         allow: ["github.com", "*.acme.test", "git.acme.test:2222", "*.acme.test:8443"],
       },
       workspaceRoot: "~/work",
-      mounts: { volumes: ["~/.npm"], binds: [{ source: "~/ref", target: "/srv/ref" }], autoOverlays: false },
+      mounts: { volumes: ["~/.npm"], binds: [{ source: "~/ref", target: "/srv/ref" }] },
       setup: [["npm", "ci"]],
       env: { allow: ["TERM", "EDITOR"] },
       resources: { cpus: 4, memoryGiB: 8 },

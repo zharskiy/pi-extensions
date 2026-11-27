@@ -1,50 +1,9 @@
 import { access } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { MountSpec } from "../backend/index.ts";
-import { overlayVolumes, visibleInside } from "../container/index.ts";
+import { visibleInside } from "../container/index.ts";
 import { realOrResolved } from "../shared/index.ts";
-import type { LaunchContext } from "./context.ts";
 import type { SandboxProxy } from "./sandbox-proxy.ts";
-
-const CAPPED_NOTICE =
-  "pinata: more than 512 build output directories; overlays disabled, the host copies are used";
-
-const TRUNCATED_NOTICE =
-  "pinata: the folder is too large to search for build output; overlays disabled, the host copies are used";
-
-const notInRepository = (cwd: string) =>
-  `pinata: ${cwd} is not in a git repository; build output is not overlaid, the host copies are used`;
-
-const overlayNotices = (context: LaunchContext) => {
-  if (!context.workspace.isGitRepo && context.effective.config.mounts.autoOverlays) {
-    return [notInRepository(context.workspace.cwd)];
-  }
-
-  if (context.workspace.overlaysCapped === true) {
-    return [CAPPED_NOTICE];
-  }
-
-  if (context.workspace.overlaysTruncated === true) {
-    return [TRUNCATED_NOTICE];
-  }
-
-  const paths = overlayVolumes(context.workspace, context.effective.config, context.stateDir).map(
-    (overlay) => overlay.path,
-  );
-
-  if (paths.length === 0) {
-    return [];
-  }
-
-  const places = paths.length === 1 ? "1 directory" : `${paths.length} directories`;
-  const kinds = [...new Set(paths.map((path) => basename(path)))].sort().join(", ");
-
-  return [
-    `pinata: ${kinds} overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`,
-  ];
-};
-
-export const launchNotices = (context: LaunchContext) => overlayNotices(context);
 
 export const proxyDetail = (proxy: SandboxProxy) => `pid ${proxy.proxy.pid} port ${proxy.proxy.port}`;
 

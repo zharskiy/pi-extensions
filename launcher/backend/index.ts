@@ -34,7 +34,6 @@ export type {
   VmSpec,
   VmTarget,
   VmWatch,
-  VolumeSummary,
 } from "./types.ts";
 export { shareDrift, vmDecision, whenBusy } from "./vm-decision.ts";
 export { hasSizeChanges, vmSizeDrift, vmSizeText } from "./vm-size.ts";

@@ -2,7 +2,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run, runPinata } from "../../cli/index.ts";
-import { configVolumeName, mountedVolumes, overlayVolumes } from "../../container/index.ts";
+import { configVolumeName, mountedVolumes } from "../../container/index.ts";
 import { sha256Hex, stateLayout } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir } from "../support/temp-dir.ts";
@@ -23,18 +23,8 @@ const volumeHarness = async () => {
   await harness.writeJson(harness.userConfigFile, { mounts: { volumes } });
 
   const [shared, data] = mountedVolumes(config, harness.stateDir);
-  const [overlay] = overlayVolumes(
-    {
-      cwd: harness.repoRoot,
-      repoRoot: harness.repoRoot,
-      isGitRepo: true,
-      overlays: [join(harness.repoRoot, "node_modules")],
-    },
-    config,
-    harness.stateDir,
-  );
 
-  return { fake, harness, shared: shared?.name ?? "", data: data?.name ?? "", overlay: overlay?.name ?? "" };
+  return { fake, harness, shared: shared?.name ?? "", data: data?.name ?? "" };
 };
 
 const plantShared = (fake: ReturnType<typeof createFakeBackend>, name: string, install: string) =>
@@ -74,27 +64,27 @@ describe("the sweep and configured volumes", () => {
 });
 
 describe("pinata status and volumes", () => {
-  it("lists the node_modules overlays and the configured volumes of this repository", async () => {
-    const { harness, shared, data, overlay } = await volumeHarness();
+  it("lists the configured volumes and no overlay, also beside a lockfile", async () => {
+    const { harness, shared, data } = await volumeHarness();
 
     expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines.filter((line) => /^ {2}(Overlays:|Volumes:| ) /.test(line))).toEqual([
-      `  Overlays:    ${join(harness.repoRoot, "node_modules")} (${overlay})`,
+    expect(harness.stdout()).not.toContain("Overlays");
+    expect(lines.filter((line) => /^ {2}(Volumes:| ) /.test(line))).toEqual([
       `  Volumes:     /home/pi/.cache/pip (${shared})`,
       `               ${DATA} (${data})`,
     ]);
   });
 
-  it("reports none of either when nothing is configured or found", async () => {
+  it("reports no volumes when nothing is configured", async () => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend });
 
     expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines.filter((line) => /^ {2}(Overlays|Volumes):/.test(line))).toEqual([]);
+    expect(lines.filter((line) => /^ {2}Volumes:/.test(line))).toEqual([]);
   });
 });
