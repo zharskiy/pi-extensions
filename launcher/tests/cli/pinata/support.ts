@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LABELS, type Vm } from "../../../backend/index.ts";
+import { BOOT_JOB, bootJobPlist, MAX_FILES_TARGET } from "../../../cli/pinata/open-files.ts";
 import { runPinata } from "../../../cli/pinata/run.ts";
 import { argvOf, type FakeAnswer, type FakeCall } from "../../support/fake-runner.ts";
 import { createFakeBackend, createHarness, type HarnessOptions } from "../harness.ts";
@@ -17,7 +18,49 @@ interface PinataOptions extends HarnessOptions {
   global?: boolean;
   vm?: Partial<Vm>;
   answer?: (call: FakeCall) => FakeAnswer | undefined;
+  maxFiles?: number;
+  bootJob?: string | false;
 }
+
+interface FakeMac {
+  maxFiles: number;
+  bootJob?: string;
+}
+
+const macAnswer = (mac: FakeMac, call: FakeCall): FakeAnswer => {
+  const [first = "", ...rest] = call.args;
+  const sudo = call.file === "/usr/bin/sudo" ? [first, ...rest].join(" ") : undefined;
+
+  if (call.file === "/usr/sbin/sysctl" && call.args.join(" ") === "-n kern.maxfiles") {
+    return { stdout: `${mac.maxFiles}\n` };
+  }
+
+  if (call.file === "/bin/cat" && first === BOOT_JOB) {
+    return mac.bootJob === undefined
+      ? { code: 1, stderr: "No such file or directory\n" }
+      : { stdout: mac.bootJob };
+  }
+
+  if (sudo?.startsWith("/usr/sbin/sysctl kern.maxfiles=")) {
+    mac.maxFiles = Number(sudo.split("=")[1]);
+
+    return { stdout: "" };
+  }
+
+  if (sudo === `/usr/bin/tee ${BOOT_JOB}`) {
+    mac.bootJob = call.options.input;
+
+    return { stdout: call.options.input };
+  }
+
+  if (sudo === `/bin/rm -f ${BOOT_JOB}`) {
+    mac.bootJob = undefined;
+
+    return {};
+  }
+
+  return sudo === undefined ? undefined : {};
+};
 
 export const writePackages = async (agentDir: string, packages: string[]) => {
   await mkdir(agentDir, { recursive: true });
@@ -27,6 +70,14 @@ export const writePackages = async (agentDir: string, packages: string[]) => {
 
 export const createPinata = async (options: PinataOptions = {}) => {
   const fake = createFakeBackend({ vm: { inspect: async () => ({ state: "absent" }), ...options.vm } });
+  const maxFiles = options.maxFiles ?? MAX_FILES_TARGET;
+  const mac: FakeMac = {
+    maxFiles,
+    bootJob:
+      options.bootJob === false
+        ? undefined
+        : (options.bootJob ?? bootJobPlist(Math.max(maxFiles, MAX_FILES_TARGET))),
+  };
   const harness = await createHarness({
     backend: () => fake.backend,
     ...options,
@@ -47,6 +98,7 @@ export const createPinata = async (options: PinataOptions = {}) => {
 
       return (
         options.answer?.(call) ??
+        macAnswer(mac, call) ??
         (line === "npm prefix -g"
           ? { stdout: `${prefix}\n` }
           : GLOBAL_NPM.test(line)
@@ -77,6 +129,7 @@ export const createPinata = async (options: PinataOptions = {}) => {
   return {
     harness,
     fake,
+    mac,
     packageDir,
     packages,
     busy,

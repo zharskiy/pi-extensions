@@ -9,6 +9,7 @@ import { type Steps, stepsOf, tilde } from "../steps.ts";
 import { launcherVersion } from "../versions.ts";
 import { setGitBlock } from "./git-block.ts";
 import { hostPiQuietly, isCheckout, PACKAGE, piSources, preflight, refuseBusy } from "./host.ts";
+import { raiseMaxFiles } from "./open-files.ts";
 import { setPathBlock } from "./path-block.ts";
 import { inspectPinataLink, inspectShim, installPinataLink, installShim, removePinataLink } from "./shim.ts";
 
@@ -91,6 +92,8 @@ export const install = async (deps: CliDeps, packageDir: string, flags: InstallF
   await setPathBlock(deps, steps, true);
 
   await setGitBlock(deps, steps, packageDir, true);
+
+  await raiseMaxFiles(deps, steps, flags.yes === true);
 
   const { code, asked } = await setup(deps, steps, flags);
 

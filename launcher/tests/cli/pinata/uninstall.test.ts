@@ -10,7 +10,7 @@ import { createPinata, writePackages } from "./support.ts";
 const RUNNING: VmInspect = { state: "running", size: { cpus: 4, memoryGiB: 8, diskGiB: 60 }, shares: [] };
 
 const installed = async (global: boolean, hostPi?: false) => {
-  const pinata = await createPinata({ global, hostPi, vm: { inspect: async () => RUNNING } });
+  const pinata = await createPinata({ global, hostPi, bootJob: false, vm: { inspect: async () => RUNNING } });
   const zshrc = join(pinata.home, ".zshrc");
   const own = global ? "npm:@zharskiy/pinata@0.3.0" : pinata.packageDir;
 

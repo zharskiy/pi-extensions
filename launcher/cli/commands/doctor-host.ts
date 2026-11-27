@@ -16,6 +16,7 @@ import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
 import { missingPi, resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
+import { MAX_FILES_TARGET, readMaxFiles } from "../pinata/open-files.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
 import {
   type CheckResult,
@@ -202,6 +203,26 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostP
     : failed(`${sessions.dir} is not writable`);
 };
 
+const checkMaxFiles = async (deps: CliDeps) => {
+  if (deps.platform !== "darwin") {
+    return skipped("only read on macOS", { neutral: true });
+  }
+
+  const current = await readMaxFiles(deps);
+
+  if (current === undefined) {
+    return warned("kern.maxfiles could not be read", {
+      hint: "run sysctl kern.maxfiles on the Mac to see why",
+    });
+  }
+
+  return current < MAX_FILES_TARGET
+    ? warned(`kern.maxfiles is ${current}, below ${MAX_FILES_TARGET}, so the Mac can run out of open files`, {
+        hint: "run pinata install on a terminal, which raises it with sudo and keeps it at boot",
+      })
+    : passed(`kern.maxfiles is ${current}`);
+};
+
 const named = async (name: string, section: Section, result: Promise<CheckResult>): Promise<NamedCheck> => ({
   name,
   section,
@@ -216,6 +237,7 @@ export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise
       named("provider hosts", "host", checkProviderHosts(deps, context, pi)),
       named("parent proxy", "network", checkParentProxy(deps)),
       named("sessions", "host", checkSessions(deps, context, files)),
+      named("open files", "host", checkMaxFiles(deps)),
     ]),
     signInChecks(deps, files),
   ]);

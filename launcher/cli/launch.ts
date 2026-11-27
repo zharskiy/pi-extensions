@@ -41,6 +41,7 @@ import { hostPathNotices, proxyDetail } from "./launch-notices.ts";
 import { beginLaunch, finishLaunch } from "./launches.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { writeOnce } from "./notices.ts";
+import { maxFilesNotice } from "./pinata/open-files.ts";
 import { runSetup, withAgentLock, withPrepareLock } from "./prepare.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
@@ -727,6 +728,8 @@ export const launch = async (args: string[], deps: CliDeps) => {
   }
 
   const { context, backend } = await openContext(deps, "sandbox");
+
+  writeNotices(deps, await maxFilesNotice(deps));
 
   return withSandbox(deps, context, backend, pi, (sandbox) => startPi(deps, context, sandbox, piArgs), {
     writeBack: true,

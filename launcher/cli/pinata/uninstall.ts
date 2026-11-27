@@ -15,6 +15,7 @@ import { releaseRepos, withInstallReleased } from "../release.ts";
 import { runQuietly, type Steps, stepsOf, tilde } from "../steps.ts";
 import { setGitBlock } from "./git-block.ts";
 import { hostPiQuietly, PACKAGE, piSources, refuseBusy } from "./host.ts";
+import { removeBootJob } from "./open-files.ts";
 import { setPathBlock } from "./path-block.ts";
 import { removePinataLink, removeShim } from "./shim.ts";
 
@@ -174,6 +175,8 @@ export const uninstall = async (deps: CliDeps, packageDir: string, sandboxOnly: 
   await setPathBlock(deps, steps, false);
 
   await setGitBlock(deps, steps, packageDir, false);
+
+  await removeBootJob(deps, steps);
 
   await removeState(deps, steps);
 

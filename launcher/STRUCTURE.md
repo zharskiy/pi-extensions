@@ -92,13 +92,14 @@ cli/commands/help.ts           the command table, printed whole for help and eve
 cli/commands/options.ts        the option check of the sandbox commands and egress
 cli/pinata/run.ts              pinata: the one command table, install, update and uninstall and the sandbox commands, with their flags
 cli/pinata/host.ts             the package name, the preflight (root, Node, colima installed with brew when missing), host pi run captured, the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
-cli/pinata/install.ts          pinata install: host pi requirement, pi install of the package, the link, the shell blocks, the git block, then pinata init, and the closing block (installed, or nothing changed)
+cli/pinata/install.ts          pinata install: host pi requirement, pi install of the package, the link, the shell blocks, the git block, the open-file limit, then pinata init, and the closing block (installed, or nothing changed)
 cli/pinata/update.ts           pinata update: checkout refusal, host pi requirement, preflight, npm install -g of the package, then the new copy's pinata install --yes
-cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox (each folder released, then under the ground and launch registry locks a second session count, the proxy stopped and the teardown it is given, silent unless a folder's session started meanwhile), removeSandbox (releaseSandbox with the colima profile deleted under its locks and the VM lock, shared with restart), the link, pi remove (a warning instead without a host pi), the shell blocks, the git block, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the shell and git blocks and npm uninstall -g
+cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox (each folder released, then under the ground and launch registry locks a second session count, the proxy stopped and the teardown it is given, silent unless a folder's session started meanwhile), removeSandbox (releaseSandbox with the colima profile deleted under its locks and the VM lock, shared with restart), the link, pi remove (a warning instead without a host pi), the shell blocks, the git block, the kern.maxfiles boot job, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the shell and git blocks, the boot job and npm uninstall -g
 cli/pinata/shim.ts             ~/.local/bin/pi: what may be replaced, the link, the recorded managed link and its restore; ~/.local/bin/pinata of a checkout, pinata's only when it points at launcher/bin/pinata-dev.js
 cli/pinata/path-block.ts       setBlock, the marked block writer (latin1 file, UTF-8 body, appended or put first, cut byte for byte); the shell block in ~/.zshrc, ~/.bashrc and ~/.bash_profile: the PATH line and GIT_OPTIONAL_LOCKS=0
 cli/pinata/git-block.ts        the git block at the start of the global git config (GIT_CONFIG_GLOBAL, ~/.gitconfig or the XDG file), including the shipped gitconfig for every repository
 cli/pinata/gitconfig          the static git settings that block includes: core.checkStat=minimal and core.trustctime=false
+cli/pinata/open-files.ts       the Mac's kern.maxfiles: its read, the launch notice and doctor row, the boot job plist, the sudo commands that raise it and write the plist at install and remove it at uninstall
 ```
 
 ## config/
@@ -482,10 +483,11 @@ tests/cli/init.test.ts               pinata init: the no-terminal and CI refusal
 tests/cli/uninstall.test.ts          releaseSandbox: release and teardown, a stopped VM, a session started meanwhile, a launch held back, a failed proxy stop
 tests/cli/steps.test.ts              the step lines: off and at a terminal, NO_COLOR, the pending line, a failing child's output, continuation rows
 tests/cli/list.test.ts               pinata list
-tests/cli/pinata/support.ts          a pinata run over the CLI harness: npm prefix, package folder, host pi install and remove writing settings.json, the captured colima delete and global npm
+tests/cli/pinata/support.ts          a pinata run over the CLI harness: npm prefix, package folder, host pi install and remove writing settings.json, the captured colima delete and global npm, and a fake Mac's kern.maxfiles and boot job behind sudo
 tests/cli/pinata/install.test.ts     pinata install
 tests/cli/pinata/update.test.ts      pinata update
 tests/cli/pinata/uninstall.test.ts   pinata uninstall
+tests/cli/pinata/open-files.test.ts  the boot job plist, the sudo commands at install and uninstall, their skips, and the launch notice
 tests/cli/pinata/no-host-pi.test.ts  the commands that run without a host pi: status, list, config, stop, restart, both uninstall forms and doctor
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch
 tests/cli/launch.test.ts             the launch
