@@ -108,6 +108,20 @@ describe("pinata install", () => {
     },
   );
 
+  it("writes a non-ASCII home into the PATH block byte for byte", async () => {
+    const pinata = await createPinata();
+    const home = join(pinata.harness.root, "Café Мир");
+    const zshrc = join(home, ".zshrc");
+
+    await mkdir(home);
+
+    pinata.harness.deps.home = home;
+    pinata.harness.deps.env.PI_CODING_AGENT_DIR = pinata.harness.hostAgentDir;
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(await readFile(zshrc)).toEqual(Buffer.from(`\n${BLOCK(home)}`, "utf8"));
+  });
+
   it.each([
     ["a file of its own", (shim: string) => writeFile(shim, "#!/bin/sh\necho mine\n")],
     ["npm's pi link", (shim: string) => symlink("../lib/node_modules/pi/dist/cli.js", shim)],

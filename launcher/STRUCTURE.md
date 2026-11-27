@@ -96,7 +96,7 @@ cli/pinata/install.ts          pinata install: host pi requirement, pi install o
 cli/pinata/update.ts           pinata update: checkout refusal, host pi requirement, preflight, npm install -g of the package, then the new copy's pinata install --yes
 cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox (each folder released, then under the ground and launch registry locks a second session count, the proxy stopped and the teardown it is given, silent unless a folder's session started meanwhile), removeSandbox (releaseSandbox with the colima profile deleted under its locks and the VM lock, shared with restart), the link, pi remove (a warning instead without a host pi), the PATH blocks, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the PATH blocks and npm uninstall -g
 cli/pinata/shim.ts             ~/.local/bin/pi: what may be replaced, the link, the recorded managed link and its restore; ~/.local/bin/pinata of a checkout, pinata's only when it points at launcher/bin/pinata-dev.js
-cli/pinata/path-block.ts       the marked PATH block in ~/.zshrc, ~/.bashrc and ~/.bash_profile, added or removed
+cli/pinata/path-block.ts       the marked PATH block in ~/.zshrc, ~/.bashrc and ~/.bash_profile, added or removed, its body written in UTF-8
 ```
 
 ## config/

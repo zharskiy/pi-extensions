@@ -39,7 +39,7 @@ Pinata never installs, updates or removes pi. Without a host pi, `pinata install
 
 1. Registers the package with host pi as `npm:@zharskiy/pinata@<version>`, the version you installed, so pi loads the extensions of that version; `pi update --extensions` does not move a pinned source.
 2. Links `~/.local/bin/pi` to pinata, after checking it before step 1, so a refusal changes nothing. pi's managed link there is replaced, and `pinata uninstall` puts it back; any other file stops the install.
-3. Puts `~/.local/bin` first on `PATH` with a marked block in `~/.zshrc`, and in `~/.bashrc` and `~/.bash_profile` when they exist. A file with an unpaired or repeated marker line is left as it is, with a line saying so. `pinata uninstall` cuts the block with the newline it added, so the file is as it was.
+3. Puts `~/.local/bin` first on `PATH` with a marked block in `~/.zshrc`, and in `~/.bashrc` and `~/.bash_profile` when they exist. A file with an unpaired or repeated marker line is left as it is, with a line saying so. `pinata uninstall` cuts the block with the newline it added, so the file is as it was. A home path with non-ASCII characters is written in UTF-8.
 4. Runs `pinata init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes` or `CI`; otherwise it runs as `pinata init --yes`, and not at all when the config has a `workspaceRoot` and the VM exists.
 
 Run again, `pinata install` changes nothing. Open a new terminal afterwards.

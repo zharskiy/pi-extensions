@@ -24,7 +24,8 @@ const setBlock = async (deps: CliDeps, steps: Steps, file: string, add: boolean)
     );
   }
 
-  const block = `${BEGIN}\nexport PATH='${join(deps.home, ".local", "bin").replaceAll("'", "'\\''")}':"$PATH"\n${END}`;
+  const body = `export PATH='${join(deps.home, ".local", "bin").replaceAll("'", "'\\''")}':"$PATH"`;
+  const block = `${BEGIN}\n${Buffer.from(body, "utf8").toString("latin1")}\n${END}`;
   const [before, after] = [lines.slice(0, Math.max(start, 0)).join("\n"), lines.slice(end + 1).join("\n")];
   const cut = `${before}${before === "" || before.endsWith("\n") || after === "" ? "" : "\n"}${after}`;
   const placed = [...lines.slice(0, Math.max(start, 0)), block, ...lines.slice(end + 1)].join("\n");
