@@ -1,7 +1,7 @@
 import { LauncherError } from "../../shared/index.ts";
 import { type CliDeps, isTerminal } from "../deps.ts";
 import { isSet } from "../prompt/terminal.ts";
-import { ChildFailure, runQuietly, type Steps } from "../steps.ts";
+import { runQuietly, type Steps } from "../steps.ts";
 
 export const MAX_FILES_TARGET = 1_048_576;
 
@@ -91,7 +91,7 @@ const runAll = (deps: CliDeps, commands: SudoCommand[]) =>
   }, Promise.resolve<unknown>(undefined));
 
 const failureOf = (error: unknown) => {
-  if (error instanceof ChildFailure) {
+  if (error instanceof LauncherError) {
     return error.message;
   }
 
@@ -99,7 +99,11 @@ const failureOf = (error: unknown) => {
 };
 
 const runWithSudo = async (deps: CliDeps, commands: SudoCommand[]) => {
-  const code = await deps.runner.spawnInteractive(SUDO, ["-v"], { cwd: deps.home });
+  const code = await deps.runner.spawnInteractive(SUDO, ["-v"], { cwd: deps.home }).catch(failureOf);
+
+  if (typeof code === "string") {
+    return code;
+  }
 
   if (code !== 0) {
     return `sudo exited with code ${code}`;

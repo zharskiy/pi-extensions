@@ -99,7 +99,7 @@ cli/pinata/shim.ts             ~/.local/bin/pi: what may be replaced, the link, 
 cli/pinata/path-block.ts       setBlock, the marked block writer (latin1 file, UTF-8 body, appended or put first after a byte-order mark, cut byte for byte, markers with or without a carriage return, written through a link by a temp file renamed over its target); the shell block in ~/.zshrc, ~/.bashrc and ~/.bash_profile: the PATH line and GIT_OPTIONAL_LOCKS=0
 cli/pinata/git-block.ts        the git block at the start of the global git config (GIT_CONFIG_GLOBAL, else the XDG file when it exists, else ~/.gitconfig) and cut from the other global files, including the shipped gitconfig for every repository
 cli/pinata/gitconfig          the static git settings that block includes: core.checkStat=minimal and core.trustctime=false
-cli/pinata/open-files.ts       the Mac's kern.maxfiles: its read, the launch notice and doctor row, the boot job plist, the sudo commands that raise it and write the plist at install and remove it at uninstall
+cli/pinata/open-files.ts       the Mac's kern.maxfiles: its read, the launch notice (shown once per value) and doctor row, the boot job plist, the sudo commands that raise it and write the plist at install and remove it at uninstall
 ```
 
 ## config/
@@ -492,7 +492,7 @@ tests/cli/pinata/install.test.ts     pinata install
 tests/cli/pinata/git-settings.test.ts  the git block: which global file, byte-order mark, CRLF markers, links, unwritable files, and git reading it
 tests/cli/pinata/update.test.ts      pinata update
 tests/cli/pinata/uninstall.test.ts   pinata uninstall
-tests/cli/pinata/open-files.test.ts  the boot job plist, the sudo commands at install and uninstall, their skips, and the launch notice
+tests/cli/pinata/open-files.test.ts  the boot job plist, the sudo commands at install and uninstall, their skips, a refused or missing sudo, and the launch notice shown once
 tests/cli/pinata/no-host-pi.test.ts  the commands that run without a host pi: status, list, config, stop, restart, both uninstall forms and doctor
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch
 tests/cli/launch.test.ts             the launch

@@ -757,7 +757,11 @@ export const launch = async (args: string[], deps: CliDeps) => {
 
   const { context, backend } = await openContext(deps, "sandbox");
 
-  writeNotices(deps, await maxFilesNotice(deps));
+  await writeOnce(
+    deps,
+    context.stateDir,
+    (await maxFilesNotice(deps)).map((notice) => `pinata: ${notice}`),
+  );
 
   return withSandbox(deps, context, backend, pi, (sandbox) => startPi(deps, context, sandbox, piArgs), {
     writeBack: true,

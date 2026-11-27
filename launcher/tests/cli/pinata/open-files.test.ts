@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { VmInspect } from "../../../backend/index.ts";
 import { run } from "../../../cli/index.ts";
 import { BOOT_JOB, bootJobPlist, MAX_FILES_TARGET } from "../../../cli/pinata/open-files.ts";
-import { stateLayout } from "../../../shared/index.ts";
+import { LauncherError, stateLayout } from "../../../shared/index.ts";
 import { argvOf } from "../../support/fake-runner.ts";
 import { createFakeBackend, createHarness } from "../harness.ts";
 import { createPinata } from "./support.ts";
@@ -134,6 +134,28 @@ describe("pinata install and the open-file limit", () => {
     );
   });
 
+  it("warns and finishes the install when sudo is missing", async () => {
+    const pinata = onTerminal(
+      await createPinata({
+        maxFiles: 122880,
+        bootJob: false,
+        answer: (call) => {
+          if (call.file === "/usr/bin/sudo") {
+            throw new LauncherError("/usr/bin/sudo: command not found");
+          }
+
+          return undefined;
+        },
+      }),
+    );
+
+    expect(await pinata.run("install")).toBe(0);
+    expect(pinata.harness.stdout()).toContain(
+      "! Could not raise kern.maxfiles: /usr/bin/sudo: command not found; run pinata install again\n",
+    );
+    expect(pinata.harness.stdout()).toContain("Pinata is installed.");
+  });
+
   it("does nothing on a host other than macOS", async () => {
     const pinata = onTerminal(await createPinata({ maxFiles: 122880, bootJob: false }));
 
@@ -189,5 +211,19 @@ describe("a launch and the open-file limit", () => {
     expect(harness.stderr().includes(`pinata: kern.maxfiles is ${value}, below 1048576`)).toBe(low);
     expect(harness.stderr()).not.toContain("run pinata install to raise it\n".repeat(2));
     expect(harness.calls.some((call) => call.file === "/usr/bin/sudo")).toBe(false);
+  });
+
+  it("says it once, not at every launch", async () => {
+    const fake = createFakeBackend({});
+    const harness = await createHarness({
+      backend: () => fake.backend,
+      respond: (call) => (call.file === "/usr/sbin/sysctl" ? { stdout: "122880\n" } : undefined),
+    });
+
+    await run(["--model", "x"], harness.deps);
+
+    await run(["--model", "x"], harness.deps);
+
+    expect(harness.stderr().split("pinata: kern.maxfiles is 122880, below 1048576")).toHaveLength(2);
   });
 });
