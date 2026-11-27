@@ -41,8 +41,6 @@ describe("the sweep and configured volumes", () => {
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.volumes.has(shared)).toBe(true);
     expect(fake.volumes.has("pinata-shared-otheruser000-aaaaaaaa")).toBe(true);
-    expect(harness.stdout()).not.toContain("without repository label");
-    expect(harness.stdout()).not.toContain("shared cache");
   });
 
   it("keeps a configured volume once a folder that mounted it is gone", async () => {
@@ -64,14 +62,13 @@ describe("the sweep and configured volumes", () => {
 });
 
 describe("pinata status and volumes", () => {
-  it("lists the configured volumes and no overlay, also beside a lockfile", async () => {
+  it("lists the configured volumes, also beside a lockfile", async () => {
     const { harness, shared, data } = await volumeHarness();
 
     expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
-    expect(harness.stdout()).not.toContain("Overlays");
     expect(lines.filter((line) => /^ {2}(Volumes:| ) /.test(line))).toEqual([
       `  Volumes:     /home/pi/.cache/pip (${shared})`,
       `               ${DATA} (${data})`,

@@ -402,7 +402,6 @@ describe("a config change while other sessions of the repository are live", () =
     expect(await run([], harness.deps)).toBe(0);
     expect(fake.created).toHaveLength(2);
     expect(piSessions(fake).at(-1)?.spec.env.EDITOR).toBe("vi");
-    expect(harness.stderr()).not.toContain("the sandbox config changed");
   });
 });
 

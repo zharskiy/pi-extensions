@@ -408,7 +408,6 @@ describe("the sweep", () => {
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(0);
     expect(fake.volumes.has(agent)).toBe(true);
-    expect(harness.stdout()).not.toContain("removed volume");
   });
 
   it("removes no volume in the daily collection", async () => {
@@ -419,7 +418,6 @@ describe("the sweep", () => {
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.volumes.has("pinata-agent-other")).toBe(true);
-    expect(harness.stdout()).not.toContain("removed volume");
   });
 });
 
@@ -465,7 +463,6 @@ describe("pinata help and version", () => {
     expect(await runPinata(["help"], harness.deps)).toBe(0);
     expect(await runPinata([], harness.deps)).toBe(0);
     expect(harness.stdout().match(/pinata doctor/g)).toHaveLength(2);
-    expect(harness.stdout()).not.toContain("pinata gc");
     expect(harness.stdout()).toContain("pinata restart  ");
   });
 

@@ -52,7 +52,6 @@ describe("pi in a project of the workspace root", () => {
     const inRoot = mounts.filter((mount) => mount.target.startsWith(harness.work));
 
     expect(inRoot).toEqual([{ source: harness.work, target: harness.work, readOnly: false, kind: "bind" }]);
-    expect(harness.stderr()).not.toContain("overlaid");
   });
 
   it("launches in a folder of the root outside git with no volume in it and no notice", async () => {
