@@ -1,10 +1,10 @@
 # `node_modules` never crosses the share
 
-Research note, 2026-11-27, revised after an independent review and a VM lab. Each claim is sourced (a link, listed under [Sources](#sources)), tested here (an experiment on the Mac, E1 to E12, under [Experiments](#experiments)), lab (a run on a Colima VM, cited by section of [lab-vm.md](lab-vm.md), L1 to L6), or marked inferred. The facts about today's launcher come from [current-behaviour.md](current-behaviour.md) (cited as CB plus item number). The facts about the two earlier attempts come from [prior-attempts.md](prior-attempts.md) (cited as PA).
+Each claim is sourced (a link, listed under [Sources](#sources)), tested here (an experiment on the Mac, E1 to E12, under [Experiments](#experiments)), lab (a run on a Colima VM, cited by section of [lab-vm.md](lab-vm.md), L1 to L6), or marked inferred. The facts about the two earlier attempts come from [prior-attempts.md](prior-attempts.md) (cited as PA).
 
 ## Question
 
-Can pinata keep the Mac's `node_modules` out of the container, and keep the container's `node_modules` off the Mac, for every `node_modules` under `workspaceRoot`? Today only the launch repository is covered (CB 23). What do others do, and which design is the cleanest?
+Can pinata keep the Mac's `node_modules` out of the container, and keep the container's `node_modules` off the Mac, for every `node_modules` under `workspaceRoot`? What do others do, and which design is the cleanest?
 
 Every mechanism is tested against these requirements.
 
@@ -23,11 +23,10 @@ Every mechanism is tested against these requirements.
 
 ## Short answer
 
-1. **Achievable, as hygiene, not as a security boundary.** Every package manager and build tool run inside can be kept from writing a `node_modules` to the Mac, and the Mac's own `node_modules` hidden inside, across the whole root. An install that starts within milliseconds of its `package.json` appearing can still write its first files to the Mac, and an agent that wants Linux files on the Mac can write them under any other name, because it has the whole root read-write (CB 52).
+1. **Achievable, as hygiene, not as a security boundary.** Every package manager and build tool run inside can be kept from writing a `node_modules` to the Mac, and the Mac's own `node_modules` hidden inside, across the whole root. An agent that wants Linux files on the Mac can still write them under any other name while it has the root read-write (`launcher/THREAT-MODEL.md`).
 2. **Industry standard:** share the sources and keep a per-OS `node_modules` on Linux-local storage at paths known in advance (a volume or a sync exclude per path), or share nothing and clone inside Linux ([compose-watch], [vscode-perf], [devspace-sync], [codespaces]). No tool found discovers new `node_modules` at any depth after start.
-3. **Recommended:** a static overlay of the whole root plus mounts on demand. At launch a walk on the Mac's own disk puts a VM-disk volume over `node_modules` beside every `package.json` or lockfile, tracked folders excepted. The root bind gets `rslave`, and when the Mac's FSEvents watch sees a new `package.json` or `node_modules`, a root helper in the VM mounts a volume there, which the running container sees (L1, L4). No seccomp. Second choice: the same plus a seccomp trap on `mkdir` as an optional strict mode.
-   *Owner's decision, 2026-11-27:* first, only the root walk, the first step of this design, was to be built as an interim step; the on-demand mounts and the trap are not to be built, because the end state is the code in the VM. *Superseded the same day:* the owner removed the walk for the root and the launch repository alike, and `mounts.autoOverlays` with it, without backward compatibility. Nothing of this design is built. See the [Decision](../README.md#decision) section of the README.
-4. What cannot be had: the Mac IDE never sees the container's install; the Mac sees an empty folder, or its own install. A shared lockfile still crosses, and npm can drop other platforms' optional packages from it ([npm-4828]). Native binaries are chosen per OS and CPU at install time, so a tree installed on one OS breaks on the other ([esbuild], [sharp]).
+3. **On a live share** every mechanism that also covers folders created after start puts something in the VM's path: a root helper that mounts on demand (B), a supervisor in front of every `mkdir` (the seccomp trap), or a filter filesystem in front of every source operation (C). Mounts made only at launch miss every later folder (A). **A synced copy** covers any depth from the first second by one name on its exclude list (F), and a clone in the VM has no shared tree at all. This is why the end state is the code in the VM ([plan.md](../plan.md)).
+4. What cannot be had: the Mac IDE never sees the container's install; the Mac sees its own install, or nothing. A shared lockfile still crosses, and npm can drop other platforms' optional packages from it ([npm-4828]). Native binaries are chosen per OS and CPU at install time, so a tree installed on one OS breaks on the other ([esbuild], [sharp]).
 
 ## What the industry does
 
@@ -57,75 +56,50 @@ Read in November 2026. Most pages carry no version.
 
 **Common practice.** Keep `node_modules` on the Linux side at known paths: a volume per path, or an exclude in a sync tool. Or share nothing and clone inside Linux. Agent tools that bind the host tree mostly do nothing special.
 
-**Best-engineered answer.** The same split, made automatic: Linux-local `node_modules`, reinstalled from the lockfile when it changes (DevSpace, Compose `rebuild`). Two of them key off `package.json` changes, as the recommended design does. No vendor found discovers folders dynamically at any depth.
+**Best-engineered answer.** The same split, made automatic: Linux-local `node_modules`, reinstalled from the lockfile when it changes (DevSpace, Compose `rebuild`). Two of them key off `package.json` changes. No vendor found discovers folders dynamically at any depth.
 
 **Correctness.** esbuild: "You cannot install esbuild on one OS, copy the `node_modules` directory to another OS without reinstalling", naming Docker and WSL. It suggests Yarn `supportedArchitectures` or the slower `esbuild-wasm` ([esbuild]). sharp: binaries are selected per OS, CPU and libc, and lockfiles shared across platforms break because of npm bug #4828 ([sharp]). npm/cli#4828: platform-specific optional dependencies are dropped from `package-lock.json` when reinstalling with `node_modules` present. Users still report it on npm 11.16 and 11.17 ([npm-4828]).
 
-## Mechanisms
+## Keeping `node_modules` off a live share
 
-### A. Static mounts over known paths, list built without the share
+These were researched for a tree that stays shared live. None is part of the end state; they record why a live share has no clean answer.
 
-**How.** The launcher lists the paths at launch and Docker mounts a VM-disk volume at each. This is today's mechanism, limited to the launch repository, and it already overlays beside a lockfile before any install: the volume starts empty and the mount point is created on the Mac (CB 12, 13, 28, 29). Widened to the root, the rule must stay "beside every `package.json` or lockfile, existing or not". Listing only existing `node_modules` would be a regression: a fresh clone's first install would go to the Mac.
+### A. Mounts at launch over known paths
 
-| Source | Cost | Misses |
+A VM-disk volume mounted at each `node_modules` when the container is created. The paths come from a listing on the Mac's own disk, beside every `package.json` or lockfile, existing or not, so a fresh clone's first install also lands on the volume.
+
+| Listing | Cost | Misses |
 |---|---|---|
-| Walk on the Mac's own APFS, skipping `.git`, `.pi`, `node_modules`, `target` | 42,002 folders in 0.25 s warm, 54 `node_modules` in 0.52 s (E7). Not measured cold, nor on the real workspace. | Nothing that exists. |
+| Walk on the Mac's own APFS, skipping `.git`, `.pi`, `node_modules`, `target` | 42,002 folders in 0.25 s warm, 54 `node_modules` in 0.52 s (E7). | Nothing that exists. |
 | `git ls-files` for `package.json` | 0.02 s per repository (E7). | Untracked packages. |
 | Spotlight (`mdfind`) | 0.07 s | Found 13 of the 54 (E8). |
 
-**Tracked folders.** Some repositories commit `node_modules`; GitHub Actions written in JavaScript commonly do (inferred). Hiding one makes container git show thousands of deletions, which `git add -A` would stage. Attempt 1 exempted tracked folders by asking git in the container, 4 ms on a small tree (PA 14), and the rule carries over. Where the check runs is open: pinata runs no git in the workspace on the Mac (PA 26), so it is git in the container before the mounts are made, which `rslave` allows (B), or a native read of the index.
-
-**Meets** R1 for folders that exist or are announced by a `package.json` or lockfile, R3, R4, R5, R6 (today's volumes persist, CB 25 to 27) and R10: npm, pnpm and Bun install into a mounted folder, and `npm ci` empties it without unmounting (E9). **Fails** R2: mounts are fixed at create (CB 33). **R7:** an empty mount point folder beside every package (CB 29), or the Mac's own install, hidden inside. **R8:** none beyond today. **R9:** one mount per package with dependencies (pnpm and Bun: every workspace package; npm: each with a conflicting version, E6). `fs.mount-max` ([kernel-fs]) is 100,000 on the VM; 2,000 propagated mounts took about 0.5 ms each, added about 65 ms to `docker exec` and 130 ms to container start, and pinned about 2 Mac descriptors each (L5). Today's 512 cap is pinata's own (CB 20); the lab gives no reason to keep it.
-
-**Precedent.** VS Code, Compose and DDEV, all per known path.
+npm, pnpm and Bun install into a mounted folder, and `npm ci` empties it without unmounting (E9). Mounts are fixed at create, so folders made later (another repository's install, a subagent worktree, a new workspace package) land on the Mac (fails R2). One mount per package with dependencies: pnpm and Bun mount every workspace package, npm each with a conflicting version (E6). 2,000 propagated mounts took about 0.5 ms each, added about 65 ms to `docker exec` and 130 ms to container start, and pinned about 2 Mac descriptors each; `fs.mount-max` is 100,000 (L5, [kernel-fs]). A committed `node_modules` must be left alone, or container git shows thousands of deletions (inferred; attempt 1 exempts tracked folders, PA). Precedent: VS Code, Compose and DDEV, all per known path.
 
 ### B. Mounts made on demand, reaching the container by propagation
 
-**How.** The workspace bind gets `bind-propagation=rslave`. A root helper in the VM bind-mounts a VM-disk folder onto `<path>/node_modules` in the VM's namespace, and the mount appears in the running container. Docker documents `rslave` and defaults to `rprivate` ([docker-bind]); a slave mount receives mount events "from a (master) shared peer group" ([mount-ns]). Today pinata sets no propagation (CB 9).
-
-**Lab.** The share's mount in the VM is already `shared`. A uid-1000 container with all capabilities dropped and an `rslave` root bind saw a mount the VM's root made after start; one with default propagation did not. 20,000 files written into the mount cost the Mac 0 descriptors, against +20,201 in a plain shared folder, and the Mac saw an empty folder (L1).
+The root bind gets `bind-propagation=rslave` ([docker-bind], [mount-ns]); a root helper in the VM bind-mounts a VM-disk folder onto `<path>/node_modules`, and the running container sees it. In the lab the share's mount in the VM was already `shared`; a uid-1000 container with all capabilities dropped and an `rslave` root bind saw a mount made after start, one with default propagation did not; 20,000 files written into the mount cost the Mac 0 descriptors, against +20,201 in a plain share folder (L1).
 
 | Trigger | Synchronous? | Covers | Verdict |
 |---|---|---|---|
 | Shims for `npm`, `pnpm`, `yarn`, `bun`, `npx` | Yes | Only calls through the shim. Misses Vite's `.vite`, absolute paths, `corepack`. | Partial |
 | Watch inside the VM | No | inotify needs a watch per folder, a walk through the share. fanotify directory events need file handles, and FUSE filesystems with a zero fsid "return ENODEV" ([fanotify-mark]); virtio-fs is FUSE-based. Not run in the lab. | Fails R5, likely fails outright |
-| FSEvents on the Mac, for a new `package.json` or `node_modules` | No | Every creation, Mac or container: container writes through the share fire FSEvents 9 to 12 ms later (L4), Mac writes 4 to 53 ms (E10). | Recommended |
-| seccomp user notification on `mkdir`, `mkdirat` | Yes | Every folder the container creates by `mkdir`, not by `rename`. | Works (L6). Strict mode only |
+| FSEvents on the Mac, for a new `package.json` or `node_modules` | No | Every creation, Mac or container: container writes through the share fire FSEvents 9 to 12 ms later (L4), Mac writes 4 to 53 ms (E10). | Works, with a race |
+| seccomp user notification on `mkdir`, `mkdirat` | Yes | Every folder the container creates by `mkdir`, not by `rename`. | Works (L6), with a hard dependency |
 
-**The FSEvents trigger.** A `package.json` almost always appears before the install that needs the mount: a clone, a `git worktree add` (722 ms for 3,021 files, L2), `npm init` or a new workspace package write it first. The launcher creates the mount point (CB 29) and asks the helper to mount. It gives up a synchronous guarantee: an install starting within the event latency plus request and mount time writes its first files to the Mac. The parts are measured (about 10 ms, L4; 0.5 ms, L5), the end-to-end latency is not.
+- **The race.** An install that starts within the event latency plus request and mount time writes its first files to the Mac. Mounted over midway, lookups reach the empty volume while the installer's open descriptors still write to the share, so the install ends split (inferred, as after the lazy unmount in L1).
+- **The helper** runs as root in the VM on paths the agent can change: the agent can swap a folder for a symbolic link between request and mount (inferred).
+- **The trap.** Docker passes `listenerPath` to runc ([moby-seccomp], [runc-seccomp]); Docker 29.5.2 with runc 1.3.5 accepted it, at about 16 µs per trapped `mkdirat` (L6). The supervisor becomes a dependency of every `mkdir`: if the listener dies, notified calls fail with ENOSYS ([seccomp-unotify]); in the lab a stuck one hung the next container's first `mkdir` for 3 minutes (L6). A trap profile replaces Docker's default filter unless merged into it (L6). Whether npm, pnpm or Bun create `node_modules` by `mkdir` or by `rename` is not verified.
 
-**An install mounted over midway** (inferred). Lookups after the mount reach the empty volume, while the installer's open descriptors and cwd in the old folder still write to the share, as after the lazy unmount in L1. The install ends split between the Mac and the volume. So the helper mounts only over a missing or empty `node_modules`. A non-empty one that appears unmounted is a leak already made: the launcher reports it, and the next launch overlays it once the user reinstalls.
+### Hazards of mounts under the root
 
-**The seccomp trap.** Docker passes `listenerPath` from a seccomp profile to runc ([moby-seccomp]). runc supports `SCMP_ACT_NOTIFY` from 1.1 and refuses it on `write` ([runc-seccomp]). Docker's default profile blocks io_uring, so it is no side door ([docker-seccomp], [moby-47532]). In the lab, Docker 29.5.2 with runc 1.3.5 accepted it, a uid-1000 container with no capabilities ran `mkdir -p` to rc 0, and the listener saw each component as `mkdirat` relative to a dirfd, at about 16 µs per call with a `CONTINUE` reply (L6). For a final component `node_modules` the supervisor does the work itself (`mkdir`, mount, `chown` to uid 1000) and replies success; otherwise `CONTINUE`, after which the target can change its arguments, and the mechanism "must not be used to make security policy decisions" ([seccomp-unotify]). Incus intercepts `mount` and `mknod` the same way ([incus-intercept]).
-
-Its costs and failure modes:
-
-- **The supervisor is a hard dependency of every `mkdir`.** If the listener dies, notified calls fail with ENOSYS ([seccomp-unotify]), so the container cannot create folders. The descriptor is handed over once, at container create (L6), so recovery means recreating the container. In the lab a stuck supervisor hung the next container's first `mkdir` for 3 minutes, and listeners did not notice their container's exit (L6).
-- **A merged profile.** A trap profile with `defaultAction` ALLOW replaces Docker's default filter, so a real one must merge the trap into Docker's default list (L6). Today's spec has none (CB 63).
-- **A native helper** in the VM (static C in the lab, L6), and **every `mkdir` pays**, Maven and Gradle builds included; one `node_modules` holds 1,910 folders (E11). The cost on a real `npm ci` is not measured.
-- **`rename`.** A `node_modules` made by renaming a staged folder already holds its contents on the share, and mounting over it hides them. Whether npm, pnpm or Bun use `mkdir` or `rename` is not verified (L6, "Not run").
-
-**Meets**, with either trigger, R1, R3, R4, R5, R6 and R10 (E9). R2: the trap meets it for `mkdir`; FSEvents except within the race.
-
-### Hazards common to mounts under the root
-
-- **Unmounting.** In the VM, `umount` fails "target is busy" while a container process has its cwd inside, and `umount -l` succeeds but leaves that process on the old tree (L1). In the container, `rm -rf node_modules` empties the mount, then fails "Resource busy" (L1, E9, [docker-ebusy]).
-- **Subagent worktrees.** With a mount at `<worktree>/node_modules`, `git worktree remove --force` failed with "Resource busy", dropped the worktree's metadata anyway and left an orphan folder (L2). The subagents extension runs `remove` without `--force` (CB 56); an ignored `node_modules` does not make a worktree unclean, so the same failure is expected (inferred). Two ways out, for the owner to choose:
-  - Unmount before removal. Removal runs in the container (CB 56), so this needs a request channel from the sandbox to the root helper (inferred), and a process left inside makes the unmount fail busy or, lazily, stay on the old tree (L1).
-  - Keep the whole `<repo>/.pi/worktrees` on a VM-disk volume: checkouts and their dependencies never touch the share, and removal deletes a subfolder of the volume (inferred, not tested). The Mac no longer sees subagent checkouts, and `git worktree prune` on the Mac deletes the record of a worktree it cannot see (PA 32).
-- **A parent deleted on the Mac** probably leaves its mounts in the VM, on a folder that no longer exists (inferred). The helper must reconcile on deletion events and at launch.
-
-### The helper as a trust point
-
-Today pinata's only root command in the VM is fixed, `sudo sysctl -q -w vm.drop_caches=2`, with no input from the folder, the config or the container (`launcher/THREAT-MODEL.md`). Mounts on demand put a root helper on paths the agent can change: it can swap a folder for a symbolic link between request and mount and steer the mount to a VM path of its choosing, and with the trap the path comes from untrusted tracee memory ([seccomp-unotify]). The requirement (inferred): requests come only from the pinata process on the Mac, as a root-relative path ending in `node_modules`; the helper resolves it from a descriptor of the root with `openat2` and `RESOLVE_BENEATH|RESOLVE_NO_SYMLINKS`, refuses to cross another mount, and mounts onto that descriptor, never a path string; the source is a VM-disk folder named from a hash of the path. THREAT-MODEL gains it as a root component with these controls.
+- **Unmounting.** In the VM, `umount` fails "target is busy" while a container process has its cwd inside, and `umount -l` leaves that process on the old tree (L1). In the container, `rm -rf node_modules` empties the mount, then fails "Resource busy" (L1, E9, [docker-ebusy]).
+- **Subagent worktrees.** With a mount at `<worktree>/node_modules`, `git worktree remove --force` failed with "Resource busy", dropped the worktree's metadata anyway and left an orphan folder (L2).
+- **A parent deleted on the Mac** probably leaves its mounts in the VM, on a folder that no longer exists (inferred).
 
 ### C. A filter filesystem between the share and the container
 
-**How.** A FUSE passthrough of pinata's own, over the virtio-fs mount in the VM, maps every component named `node_modules` to VM disk.
-
-**Meets** R1 to R3 synchronously, even against a hostile agent. **Costs.** A daemon in the path of every source operation. FUSE passthrough covers `read`, `write`, `splice` and `mmap` and needs `CAP_SYS_ADMIN` ([fuse-passthrough]); lookups, `stat` and `readdir`, which dominate `git status`, still go through the daemon (inferred). It does nothing for R4 on sources, since the daemon keeps the virtio-fs inodes alive (inferred). A root daemon parsing agent-controlled names. `index.lock` and timestamp semantics untested. No precedent found.
-
-**overlayfs** with a VM-disk upper layer sends every write there, which breaks the live share. **mergerfs** picks a branch by free space or existence, not by name (inferred). Both dropped.
+A FUSE passthrough over the virtio-fs mount in the VM that maps every component named `node_modules` to VM disk. It meets R1 to R3 synchronously, even against a hostile agent, but a daemon sits in the path of every source operation: passthrough covers `read`, `write`, `splice` and `mmap` and needs `CAP_SYS_ADMIN` ([fuse-passthrough]); lookups, `stat` and `readdir`, which dominate `git status`, still go through it, and it keeps the virtio-fs inodes alive, so it does nothing for R4 on sources (inferred). No precedent found. overlayfs with a VM-disk upper layer sends every write there, which breaks the live share; mergerfs picks a branch by free space or existence, not by name (inferred).
 
 ### D. Package-manager redirection
 
@@ -142,11 +116,11 @@ A symlinked `node_modules` to VM disk works for pnpm, Bun and both Yarns, and np
 
 ### E. Refusing instead of redirecting
 
-In strict mode the trap can return `EPERM` when the helper cannot mount, so nothing leaks silently. AppArmor globs such as `deny <root>/**/node_modules/ w,` could refuse without a daemon; Colima's Docker lists `apparmor` in one user report ([colima-1019]); its mediation of `mkdir` on virtio-fs is not verified (not run in the lab). fanotify permission events cover open and access only ([fanotify-mark]). A refusal alone means a failed install, so it suits only as a fallback.
+A trap can return `EPERM`; AppArmor globs such as `deny <root>/**/node_modules/ w,` could refuse without a daemon, but their mediation of `mkdir` on virtio-fs is not verified ([colima-1019]). fanotify permission events cover open and access only ([fanotify-mark]). A refusal alone means a failed install.
 
 ### F. Not sharing live (synced copies)
 
-Attempt 1 leaves `node_modules` and `target` unsynced on each side by a name list at any depth, tracked folders exempted, at the cost of a rebuild after `pinata restart` (PA 12 to 16). Attempt 2 rates volumes over subfolders "useful, not a bound" (PA 17 to 19). A sync's ignore list covers any depth from the first second: R1 and R2 for free.
+Attempt 1 leaves `node_modules` and `target` unsynced on each side by a name list at any depth, tracked folders exempted, at the cost of a rebuild after `pinata restart` (PA). Attempt 2 rates volumes over subfolders "useful, not a bound" (PA). A sync's ignore list covers any depth from the first second: R1 and R2 for free, with no mount, helper or trap.
 
 ### G. Other ecosystems
 
@@ -156,10 +130,10 @@ Attempt 1 leaves `node_modules` and `target` unsynced on each side by a name lis
 | Python `__pycache__` | Yes: `PYTHONPYCACHEPREFIX`, 3.8 and later ([python-cmdline]). |
 | Python `.venv` (uv) | Yes: `UV_PROJECT_ENVIRONMENT`, 0.4.4 and later ([uv-env]). |
 | Gradle `.gradle` | Yes, by flag: `--project-cache-dir`. `build/` has no flag or variable ([gradle-cli]). |
-| Maven `target/` | No switch found. Overlaying it breaks `mvn clean` with EBUSY (CB 14). |
+| Maven `target/` | No switch found. A volume over it breaks `mvn clean` with EBUSY, as `rm -rf` on a mount fails busy (L1, E9; inferred for Maven). |
 | npm `node_modules` | No. Node resolves by walking up the folders (inferred from [node-esm]), and npm refuses links (E1). |
 
-Rust and Python can be handled by a variable in the container. JavaScript cannot, which is why `node_modules` needs mounts.
+Rust and Python can be handled by a variable in the container. JavaScript cannot, so on a live share `node_modules` needs mounts; a sync needs only its name.
 
 ## Experiments
 
@@ -180,115 +154,14 @@ macOS 27.2 on this Mac. Node 26.10.0, npm 11.19.1, pnpm 12.9.1, Bun 1.4.2, Yarn 
 | E11 | `find node_modules -type d \| wc -l`, this repository's root | 1,910 folders and 19,493 files. 78,572 files across the 54 local `node_modules`. |
 | E12 | pnpm `enableGlobalVirtualStore: true`, store in the lab | Project `node_modules`: 4 files (20 KB) plus relative links into the store. `require` and `pnpm exec` worked. |
 
-## Fit for pinata
-
-### Ranking
-
-1. **A over the whole root, plus B triggered by FSEvents**, as in [Recommended design](#recommended-design). Meets R1, R3 to R6 and R10, and R2 except for an install that races its own `package.json`.
-2. **The same plus the seccomp trap as an optional strict mode**, with E's `EPERM` as fallback. It closes the race and works (L6). Costs: the supervisor in front of every `mkdir`, a merged profile, a native helper, paths read from tracee memory (B).
-3. **C, a FUSE filter.** The strongest guarantee, but every source operation pays, descriptors are not fixed, and it adds the most trust surface.
-4. **D, package-manager settings.** Per repository, and npm has nothing.
-5. **Symlinks.** npm removes them, and they dangle on the Mac.
-6. **overlayfs, mergerfs, in-VM watches.** They do not fit.
-
-The root walk alone, with mounts at create and no `rslave`, is the first step of 1 and can ship by itself: a change of scan scope, failing only R2.
-
-*Owner's decision, 2026-11-27:* that first step was at first the only one to be built, as an interim step until the code moves into the VM. *Superseded the same day:* the owner removed the walk altogether, for the root and the launch repository, and `mounts.autoOverlays` with it; the removal is track B of [plan.md](../plan.md#track-b-removal-of-the-build-output-overlays). The rest of 1 and all of 2 are not to be built, because they need a root helper in the VM or a supervisor in front of every `mkdir`, and the code in the VM replaces them. The ranking and the design below stay as the record of what was found. See the [Decision](../README.md#decision) section of the README.
-
-### Why the first is the more elegant
-
-| | 1. Static + FSEvents | 2. Plus seccomp trap | 3. FUSE filter |
-|---|---|---|---|
-| Adds | One mount option, one Mac watcher, a VM helper that mounts on request | All of 1, plus a listener, a merged profile, a native binary | A filesystem daemon |
-| Builds on | Today's Mac-side scan, per-path volumes and mount points (CB 11 to 30), and a Mac-side watcher loop like the file-cache watch (CB 59) | The same | Nothing pinata has |
-| In the path of normal work | Nothing | Every `mkdir` | Every source operation |
-| Failure mode | A late mount: an install's first files reach the Mac, visible and recoverable | A container that cannot create folders (ENOSYS or a hang), fixed by recreating it | Sources unreachable |
-
-Design 1 adds the least and fails the softest: it extends the launcher's own pattern, a native scan feeding per-path volumes, in time, with a watcher of a kind it already runs. Design 2 buys the last milliseconds with a root daemon in front of every `mkdir`, whose worst case is far worse than the leak it prevents. Neither is a security boundary, so the softer failure wins.
-
-### Recommended design
-
-At launch the launcher walks the whole `workspaceRoot` on the Mac without entering `.git`, `.pi` or `node_modules`, and finds every folder with a `package.json` or node lockfile. Except where `node_modules` is tracked, each gets a VM-disk volume over `<dir>/node_modules`, keyed and labelled as today and persisting across launches, with the 512 cap lifted (L5). The root bind gets `rslave`. While pi runs, a recursive FSEvents watch on the Mac sees new `package.json` files and `node_modules` folders; the launcher creates the mount point and asks the VM helper to mount a volume, only over a missing or empty folder. Strict mode, off by default, adds the trap.
-
-*Note, 2026-11-27:* the code differs from this paragraph. Its rule is a node lockfile in the folder, or a `package.json` below a lockfile in the same repository (at most 256 per repository), not every `package.json`; it has no exception for tracked `node_modules`; and the same walk overlays `.venv`, `target` and `.gradle` beside their markers. The plan recommended keeping the code's rule; since the owner's later decision the same day the code's walk is removed instead ([plan.md](../plan.md#track-b-removal-of-the-build-output-overlays)).
-
-### What it changes in the launcher
-
-- The overlay scan: whole root, beside every `package.json` or lockfile, tracked folders excepted (*2026-11-27:* the code's rule differs, see the note above), without the per-repository caps and the 512 cap (CB 13, 19, 20). *2026-11-27:* not to be made; the owner removed the scan instead.
-- `container-body.ts`: `BindOptions.Propagation: "rslave"` on the root bind (CB 9); in strict mode, the merged profile in `SecurityOpt`.
-- A VM helper under the rules of [The helper as a trust point](#the-helper-as-a-trust-point), with root in the VM, which pinata already uses (CB 59).
-- The FSEvents watcher in the pinata process. Mount points are recorded as today (CB 29), and the helper's mounts are removed at the end of the last launch.
-- A decision on subagent worktrees.
-- Docs: `launcher/` README, ARCHITECTURE, STRUCTURE, THREAT-MODEL and CONFIGURATION, and the root docs. THREAT-MODEL keeps "a convenience, not a security control" (CB 34).
-
-### What it costs
-
-- A root helper in the VM acting on paths the agent can change.
-- One mount per package with dependencies, possibly thousands with pnpm workspaces (E6), each about 2 Mac descriptors (L5), and an empty `node_modules` on the Mac beside every package while pinata runs (CB 29).
-- Volumes on VM disk, lost on `pinata restart`. Two installs per project, one per OS, if the IDE needs dependencies.
-
-### What breaks or stays open
-
-- The hazards above: busy unmounts and `rm -rf` (L1, E9), worktree removal (L2), orphan mounts, and the race with a split install (inferred).
-- A shared lockfile can lose other platforms' optional packages ([npm-4828]); Linux installs should use `npm ci`.
-- `.next`, `dist`, `.turbo`, `.angular` stay shared unless the list grows. Maven `target/` cannot be overlaid (CB 14).
-- A hostile agent can still put Linux files on the Mac under any name.
-
-## Not verified, to measure on the VM
-
-Propagation, descriptor cost, FSEvents for guest writes, mount scale, `listenerPath` and the per-call trap cost ran in the lab (L1, L4 to L6). Still open:
+## Not verified
 
 | Claim | Check |
 |---|---|
-| End-to-end latency, `package.json` written in the container to mount visible there | Timestamp the write, the FSEvents callback, the helper's reply and `findmnt` in the container. |
-| What an install mounted over midway leaves | Mount over `node_modules` 100 ms into `npm ci`; compare Mac folder, volume and `npm ls`. |
 | npm, pnpm, Bun create `node_modules` by `mkdir`, not `rename` | `strace -f -e trace=mkdir,mkdirat,rename,renameat2 <pm> install` in the container. |
-| Trap cost on a real install | `time npm ci`, 20,000 files, trapped (merged profile) and untrapped. |
-| Walk time on the real workspace | `time find <root> \( -name .git -o -name .pi -o -name node_modules \) -prune -o -name package.json -print`, cold and warm. *Correction, 2026-11-27:* this counts `package.json` files, not the code's directories walked or its overlays; it has no `-type f`, matches `.git` case-sensitively, does not skip folders whose marker sits beside them and prints to the terminal while timed. Tested commands and the code's own scan, kept for the record and not needed since the walk is removed: [below](#2026-11-27-measurement-commands-kept-for-the-record). |
-| Worktree removal | L2 without `--force`, then with `.pi/worktrees` on a volume. |
-| Orphan mount after a Mac-side delete | Mount at `r/node_modules`, `rm -rf r` on the Mac, `findmnt` in the VM and container. |
 | fanotify on virtio-fs | `fanotify_mark(FAN_MARK_FILESYSTEM, FAN_CREATE\|FAN_ONDIR)` with `FAN_REPORT_FID`. Expect ENODEV. |
 | AppArmor refusal | `deny <root>/**/node_modules/ w,`, `--security-opt apparmor=<name>`, then `mkdir`. |
-
-## 2026-11-27: measurement commands, kept for the record
-
-Moved here from [plan.md](../plan.md) on 2026-11-27. They counted what step 1's walk of the whole root would visit, to feed its gate. The owner then removed the walk and `mounts.autoOverlays` ([README.md](../README.md#decision)), so they are not needed and are kept only as the record of how the count would have been taken.
-
-Run on the Mac, in zsh or sh; nothing is written. Replace the path in the first line with the configured `workspaceRoot`. The counts follow the code's walk: it does not enter a `.git` of any letter case, `.pi`, `node_modules`, or a folder whose marker sits beside it (`target` beside `Cargo.lock`, `.venv` beside `uv.lock`, `poetry.lock` or `Pipfile.lock`, `.gradle` beside `settings.gradle` or `settings.gradle.kts`), and it does not follow symbolic links.
-
-```
-ROOT=/path/to/workspaceRoot
-sh -c '
-cd "$1" || exit 1
-walk() {
-  find . \( -iname .git -o -name .pi -o -name node_modules \
-    -o -name target -exec test -e {}/../Cargo.lock \; \
-    -o -name .venv \( -exec test -e {}/../uv.lock \; -o -exec test -e {}/../poetry.lock \; -o -exec test -e {}/../Pipfile.lock \; \) \
-    -o -name .gradle \( -exec test -e {}/../settings.gradle \; -o -exec test -e {}/../settings.gradle.kts \; \) \
-    \) -prune -o "$@"
-}
-echo "directories walked: $(walk -type d -print | wc -l)"
-echo "target folders beside pom.xml: $(walk -type d -name target -exec test -e {}/../pom.xml \; -print | wc -l)"
-echo "directories in them: $(walk -type d -name target -exec test -e {}/../pom.xml \; -exec find {} \( -iname .git -o -name .pi -o -name node_modules \) -prune -o -type d -print \; | wc -l)"
-echo "folders with a node lockfile: $(walk -type f \( -name package-lock.json -o -name npm-shrinkwrap.json -o -name pnpm-lock.yaml -o -name yarn.lock -o -name bun.lock -o -name bun.lockb \) -print | sed "s|/[^/]*\$||" | sort -u | wc -l)"
-echo "package.json files: $(walk -type f -name package.json -print | wc -l)"
-echo "repositories: $(find . \( -name .pi -o -name node_modules \) -prune -o -iname .git -print -prune | wc -l)"
-echo "node_modules folders on disk, by top-level folder:"
-find . \( -iname .git -o -name .pi \) -prune -o -type d -name node_modules -print -prune | cut -d/ -f2 | sort | uniq -c
-' sh "$ROOT"
-```
-
-The exact overlay count and the walk time, by the code's own scan with no budget limit. For an npm-installed pinata:
-
-```
-BIN="$(dirname "$(realpath "$(command -v pinata)")")"
-SCAN="$BIN/../dist/workspace/overlay-scan.js"
-node -e 'const [, file, root] = process.argv; import(file).then(async (m) => { const t = performance.now(); const r = await m.scanOverlays(root, 1e8); console.log(`ms ${Math.round(performance.now() - t)}, overlays ${r.overlays.length}, node_modules ${r.overlays.filter((p) => p.endsWith("/node_modules")).length}, truncated ${r.truncated}`); })' "$SCAN" "$ROOT"
-```
-
-From a checkout, set `SCAN="$BIN/../workspace/overlay-scan.ts"` instead (`dist/` there may be stale). The `.ts` file needs Node's type stripping, which pinata's own dev bins rely on; pinata's `engines` asks for Node 22.19 or later. Node refuses to strip types under `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which is why the npm install uses the built `.js`. For cold numbers run `sudo purge` first; run the scan a second time for warm numbers.
-
-Tested 2026-11-27 on macOS 27.2 with Node 26.10.0, in `/bin/sh`, `zsh -f`, an interactive zsh and `dash`, against a scratch tree of seven repositories: a `.git` folder, a `.git` file and a `.Git` folder; a `.pi/worktrees` checkout with a `package.json` and a `node_modules`; nested `node_modules`; `target` beside `Cargo.lock` and beside two `pom.xml`; a `.venv` beside `uv.lock`; a `.gradle` without its marker; three node lockfiles; a nested repository. Every count matched the hand count: 37 directories walked, 2 `target` folders beside `pom.xml` holding 6 directories, 3 lockfile folders, 9 `package.json` files, 7 repositories, `node_modules` on disk 2 and 1. The scan printed 9 overlays, 7 of them `node_modules`, the same list as worked out by hand, from the checkout's `.ts`, its `dist/` `.js`, and both files copied under a scratch `lib/node_modules/` with a `bin/pinata` link pointing in, which is how the npm-install form was tested; on a real `npm install -g` it is untested. Node versions other than 26.10.0 are untested.
+| The counts on the real workspace | Never measured by either attempt (PA). |
 
 ## Sources
 
@@ -348,3 +221,4 @@ Tested 2026-11-27 on macOS 27.2 with Node 26.10.0, in `/bin/sh`, `zsh -f`, an in
 - [python-cmdline]: https://docs.python.org/3/using/cmdline.html
 - [uv-env]: https://docs.astral.sh/uv/reference/environment/
 - [gradle-cli]: https://docs.gradle.org/current/userguide/command_line_interface.html
+

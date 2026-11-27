@@ -4,16 +4,16 @@
 
 Today every repository's `.git` reaches the agent container through Apple's virtio-fs share, read-write, with the work tree. The owner says this seems problematic and asks: what if all git interactions are handled on the host, while the agent can still use git in the container? What are the options, what does the industry do, and what is the most logical and elegant solution?
 
-Each claim below is marked: a URL (sourced), an experiment E1 to E8 on the Mac (tested here, see Experiments), a lab section on a Colima VM ("lab L2" and so on, in [lab-vm.md](lab-vm.md)), or "inferred". Facts about pinata come from [current-behaviour.md](current-behaviour.md) (CB) and [prior-attempts.md](prior-attempts.md) (PA).
+Each claim below is marked: a URL (sourced), an experiment E1 to E8 on the Mac (tested here, see Experiments), a lab section on a Colima VM ("lab L2" and so on, in [lab-vm.md](lab-vm.md)), or "inferred". Facts about the earlier attempts come from [prior-attempts.md](prior-attempts.md) (PA); facts about pinata name the file they come from.
 
 ## Short answer
 
 1. **All git on the host, behind a shim: no.** Git's argv, environment and repository-selected hooks are a code-execution surface (six vectors in E6), the Mac's credentials become reachable, and tools that read `.git` without calling git break. No sandbox product forwards git argv to the host.
-2. **What is problematic, in measured order.** (a) The `git status` walk over the work tree is the descriptor cost, not `.git`: one walk over 20,420 tracked files adds about 20,830 Mac descriptors whether `.git` is shared or private; the two differ by 11 (lab L3). (b) Two kernels on one index: while the Mac rewrites its index, the container reads it as empty and `commit -am` can commit the deletion of every file. It is real and frequent: 890 of 900 container reads were bad while a Mac loop rewrote the index continuously (lab L2). (c) Agent-writable config and hooks, which the Mac's git and IDE run; the threat model accepts this today (CB 52).
+2. **What is problematic, in measured order.** (a) The `git status` walk over the work tree is the descriptor cost, not `.git`: one walk over 20,420 tracked files adds about 20,830 Mac descriptors whether `.git` is shared or private; the two differ by 11 (lab L3). (b) Two kernels on one index: while the Mac rewrites its index, the container reads it as empty and `commit -am` can commit the deletion of every file. It is real and frequent: 890 of 900 container reads were bad while a Mac loop rewrote the index continuously (lab L2). (c) Agent-writable config and hooks, which the Mac's git and IDE run; the threat model accepts this (`launcher/THREAT-MODEL.md`).
 3. **The options** are A (keep the shared `.git`, harden or guard it), B and C (brokers to the Mac's git), D (a git dir private to the sandbox over the same live work tree), E (a separate clone) and F (make git cheap). One question decides between the two coherent ones, A and D: may the developer's git and the agent's git hold different state (HEAD, index) over the same live work tree?
 4. **Industry standard** has two halves. For a work tree shared live (Dev Containers, Docker Sandboxes' direct mode): one shared `.git` with nothing added. For isolation (cloud agents, Docker Sandboxes' clone mode): a repository owned by the sandbox, with results crossing through git's transport. Local tools that protect `.git` (Claude Code's sandbox, Codex CLI) run on the host's own kernel and have no empty-index window.
-5. **Most logical and elegant: D with an fsmonitor hook answered by a watcher on the Mac.** It removes the empty-index hazard and the walk, keeps the agent's writes out of the Mac's `.git`, and has the same shape as the `node_modules` answer: a VM-disk volume mounted over a folder each side keeps to itself, with only git's transport crossing. It works end to end on the VM (lab L2). Its price: a window in which the two HEADs or indexes disagree and the agent commits the revert of its own work (tested here), a host-side sync, per-repository volumes, a newer git than the image ships, and the reversal of commit `f7a62a98`.
-6. **Order:** do not build a broker; build a container-side index guard now, because the hazard exists today; write D's spec next, starting from the HEAD policy and a tested answer to the stash and branch-switch case, and build D only after that.
+5. **For a work tree shared live, the most coherent: D with an fsmonitor hook answered by a watcher on the Mac.** It removes the empty-index hazard and the walk, keeps the agent's writes out of the Mac's `.git`, and has the same shape as the `node_modules` answer: a VM-disk volume mounted over a folder each side keeps to itself, with only git's transport crossing. It works end to end on the VM (lab L2). Its price: a window in which the two HEADs or indexes disagree and the agent commits the revert of its own work (tested here), a host-side sync, per-repository volumes, a newer git than the image ships, and the reversal of commit `f7a62a98`.
+6. **With the code in the VM** the walk leaves the share in every form, and what remains is where git lives: the Mac's `.git` bound from the share (one index, the empty-index window remains), D over the synced tree (the two-state window), or a clone (E, no live work tree for the IDE). [plan.md](../plan.md#git) sets them side by side.
 
 ## What is problematic about a shared `.git`
 
@@ -47,17 +47,17 @@ Git runs commands named in repository config and files in the git dir. A contain
 | `core.fsmonitor` | a command on every `status`, also in IDE background refreshes | `man git-config` 2.50.1; CVE-2022-24765 used it ([GitHub blog](https://github.blog/open-source/git/git-security-vulnerability-announced/)) |
 | `core.sshCommand`, `core.pager`, `core.editor`, `diff.external`, `diff.<driver>.command`, `merge.<driver>.driver`, `filter.<driver>.clean/smudge/process`, `credential.helper`, `alias.*` with `!`, `include.path` | a command when that feature is used | `man git-config` 2.50.1 |
 | `core.hooksPath`, `.git/hooks/*`, config-defined hooks (2.55) | hooks on commit, checkout, merge, rebase, push, ref updates | `man git-config`; E6; [2.55 release notes](https://raw.githubusercontent.com/git/git/master/Documentation/RelNotes/2.55.0.adoc) |
-| `objects/info/alternates`, `commondir`, a `.git` file's `gitdir:` | redirect git to another repository inside the root | CB 54 |
+| `objects/info/alternates`, `commondir`, a `.git` file's `gitdir:` | redirect git to another repository inside the root | `launcher/THREAT-MODEL.md` |
 
 Git honours some variables (`uploadpack.packObjectsHook`, `safe.directory`) only from protected configuration, "a safety measure against fetching from untrusted repositories" (`man git-config`). The class keeps producing CVEs: CVE-2022-24765, CVE-2024-32002 ([Red Hat](https://access.redhat.com/security/cve/CVE-2024-32002)), CVE-2025-48384, on CISA's exploited list ([NVD](https://nvd.nist.gov/vuln/detail/CVE-2025-48384)).
 
-Pinata accepts this risk on purpose. Commit `f7a62a98` (`feat(launcher)!: run every project from one shared workspace root`) removed the read-only binds over each repository's `hooks`, the git report after the session, and workspace mode's per-repository checks (at most 128 repositories), saying "Git validation and the read-only git protections are removed: the root holds the user's own repositories" (`git show f7a62a98`, its `REMOVED-DEFAULTS.md` rows "`.git/hooks` read-only inside: Writable" and "The git report … Gone"; CB 41). That was a trust and scale decision: one root of the user's own projects, no per-repository mounts.
+Pinata accepts this risk on purpose. Commit `f7a62a98` (`feat(launcher)!: run every project from one shared workspace root`) removed the read-only binds over each repository's `hooks`, the git report after the session, and workspace mode's per-repository checks (at most 128 repositories), saying "Git validation and the read-only git protections are removed: the root holds the user's own repositories" (`git show f7a62a98`, its `REMOVED-DEFAULTS.md` rows "`.git/hooks` read-only inside: Writable" and "The git report … Gone"). That was a trust and scale decision: one root of the user's own projects, no per-repository mounts.
 
-Residual vectors outside `.git` survive every design that keeps the work tree live: husky sets `core.hooksPath` to `.husky/_` in the work tree, whose stubs run tracked scripts ([husky source](https://raw.githubusercontent.com/typicode/husky/main/index.js); E6), and build files, `.idea` run configurations, `package.json` scripts and planted nested repositories are agent-written code the Mac runs (CB 52).
+Residual vectors outside `.git` survive every design that keeps the work tree live: husky sets `core.hooksPath` to `.husky/_` in the work tree, whose stubs run tracked scripts ([husky source](https://raw.githubusercontent.com/typicode/husky/main/index.js); E6), and build files, `.idea` run configurations, `package.json` scripts and planted nested repositories are agent-written code the Mac runs (`launcher/THREAT-MODEL.md`).
 
 ## Lock errors
 
-*Added 2026-11-27.* The owner sometimes sees a git lock error from the container. The exact message was not captured, so which lock and which command are unknown.
+The owner sometimes sees a git lock error from the container. The exact message was not captured, so which lock and which command are unknown.
 
 What is known:
 
@@ -65,11 +65,10 @@ What is known:
 - A background `git status` takes the index lock to write refreshed stat data back, an optional step ([git-status, Background refresh](https://git-scm.com/docs/git-status#_background_refresh)).
 - The stat mismatch between the macOS and Linux views makes each side rewrite the whole index (above; 40,000 files in 0.8 s on the Mac, 4 s in the container, PA), which holds the lock longer.
 
-From the code, checked 2026-11-27 (grep, tests and build output excluded):
+From the code:
 
-- Nothing in `launcher/`, `extensions/` or `platform/` sets `GIT_OPTIONAL_LOCKS`, `core.checkStat`, `core.trustctime`, `safe.directory`, `gc.auto` or `maintenance.*`. `core.fsmonitor` appears once, as `-c core.fsmonitor=false` on the host's own identity read (`launcher/hostpi/tools/git.ts:7`), never in the container.
-- The host runs no git against the workspace: one `git config --global --includes --get-regexp '^user\.(name|email)$'` per launch (`launcher/hostpi/tools/git.ts:27-29`), which reads the global file only.
-- In the container, the subagents extension runs per `worktree: true` agent `rev-parse HEAD --show-prefix` and `worktree add -b` at the start, and `worktree remove`, `rev-parse <branch>` and, when the branch still points at its base, `branch -D` at the end (`extensions/subagents/core/run-agent/worktree.ts:38`, `:55`, `:66`, `:72`, `:78`). Nothing serialises parallel agents: `placement.ts:35` calls it directly. The shipped agents all say `worktree: false` (CB 58), so this arises only with a user's agent.
+- pinata applies `GIT_OPTIONAL_LOCKS=0`, `core.checkStat=minimal` and `core.trustctime=false` on the Mac and in the container ([launcher/README.md](../../../launcher/README.md), [launcher/CONFIGURATION.md](../../../launcher/CONFIGURATION.md)).
+- In the container, the subagents extension runs per `worktree: true` agent `rev-parse HEAD --show-prefix` and `worktree add -b` at the start, and `worktree remove`, `rev-parse <branch>` and, when the branch still points at its base, `branch -D` at the end (`extensions/subagents/core/run-agent/worktree.ts`). Nothing serialises parallel agents. The shipped agents all say `worktree: false` (`extensions/subagents/agents/`), so this arises only with a user's agent.
 
 Not researched:
 
@@ -86,7 +85,7 @@ Not researched:
 | `core.checkStat=minimal` | Only the size and the whole-second mtime are compared; inode, owner and sub-second times are ignored. | A same-size edit within the same second can be missed; attempt 1 saw it with the guest clock behind (PA). |
 | `core.trustctime=false` | ctime is ignored. | None in practice. |
 
-Sources: https://git-scm.com/docs/git (`GIT_OPTIONAL_LOCKS`), https://git-scm.com/docs/git-config (`core.checkStat`, `core.trustctime`), https://git-scm.com/docs/git-status (Background refresh). The owner decided on 2026-11-27 that pinata applies them through its commands, and a design is proposed, not agreed: see the [Decision](../README.md#decision) section of the README and [git-settings-proposal.md](../git-settings-proposal.md).
+Sources: https://git-scm.com/docs/git (`GIT_OPTIONAL_LOCKS`), https://git-scm.com/docs/git-config (`core.checkStat`, `core.trustctime`), https://git-scm.com/docs/git-status (Background refresh).
 
 ## What the industry does
 
@@ -110,7 +109,7 @@ Nobody forwards an agent's git argv to the host; where git stays on the host (Do
 
 ### Docker Sandboxes' direct mode
 
-*Added 2026-11-27.* Read in the raw pages [architecture](https://docs.docker.com/ai/sandboxes/architecture/), [git workflows](https://docs.docker.com/ai/sandboxes/workflows/git/) and [troubleshooting](https://docs.docker.com/ai/sandboxes/troubleshooting/):
+Read in the raw pages [architecture](https://docs.docker.com/ai/sandboxes/architecture/), [git workflows](https://docs.docker.com/ai/sandboxes/workflows/git/) and [troubleshooting](https://docs.docker.com/ai/sandboxes/troubleshooting/):
 
 - Direct mode is a live mount: the directory "is mounted into the sandbox through a filesystem passthrough", and "changes in either direction are instant with no sync process involved" (architecture).
 - "Virtiofs caching is enabled by default for directly mounted workspaces on all operating systems." (architecture)
@@ -126,18 +125,16 @@ Conclusion: no product found ships protections for the shared mode. The industry
 
 ## Designs
 
-### A. Shared `.git`, as today
+### A. Shared `.git`
 
-**A1, hardened by binds.** Pinata binds `config`, `hooks`, `info` and `objects/info` read-only per repository. With `chflags uchg` standing in for a read-only bind (E3), `git remote add` and `git config` fail, and `branch --set-upstream-to`, `checkout --track` and `push -u` print "could not write config file" yet exit 0. The list is open-ended (`packed-refs`, `commondir`, `worktrees/*/config.worktree`, new keys). It needs binds per repository, keeps the window and the walk, and is what `f7a62a98` removed (CB 41).
+**A1, hardened by binds.** Pinata binds `config`, `hooks`, `info` and `objects/info` read-only per repository. With `chflags uchg` standing in for a read-only bind (E3), `git remote add` and `git config` fail, and `branch --set-upstream-to`, `checkout --track` and `push -u` print "could not write config file" yet exit 0. The list is open-ended (`packed-refs`, `commondir`, `worktrees/*/config.worktree`, new keys). It needs binds per repository, keeps the window and the walk, and is what `f7a62a98` removed.
 
 **A2, guarded against the empty index.** Two container-only pieces, undesigned and untested:
 
 - A `git` wrapper in the image, ahead of the real git on `PATH`. Before a verb that reads or writes the index, it checks whether `.git/index` is missing or has zero entries (the count in its header) while `HEAD^{tree}` is not empty; if so it retries for about a second (the window is 440 to 500 ms, PA) and then refuses. Limits: a gap between its check and git's own open, which a Mac writing continuously can hit (lab L2's loop would); tools that bypass it (JGit, libgit2, go-git, anything that runs `/usr/bin/git` by path).
 - A container-only pre-commit check, installed by `core.hooksPath` through `GIT_CONFIG_COUNT`, that refuses a commit whose tree deletes every tracked file. Limits: it replaces a repository's own `core.hooksPath` (husky), so it must chain to it; `--no-verify` skips it; it does not catch a partial loss.
 
-With them go attempt 1's container settings by `GIT_CONFIG_COUNT` (`core.checkStat=minimal`, `core.trustctime=false`, `core.ignorecase=false`, `GIT_OPTIONAL_LOCKS=0`, PA) and `safe.directory`, which pinata sets nowhere today (CB 49) and the lab needed (lab L2). The user's `env.set` can also set `GIT_CONFIG_COUNT` (CB 48), so the two must be merged (inferred).
-
-*2026-11-27:* the proposal for the lock settings puts the two `core` keys in the rendered `~/.gitconfig` instead, to avoid that merge, and leaves `core.ignorecase` and `safe.directory` out ([git-settings-proposal.md](../git-settings-proposal.md)). It is not agreed.
+Beside the settings pinata applies, attempt 1 also sets `core.ignorecase=false` and `safe.directory` in the container (PA); the lab needed `safe.directory` (lab L2).
 
 A2 keeps one HEAD and one index, the property attempt 1 chose a single `.git` for (PA). It does nothing for the walk: an fsmonitor hook over the shared index is unmeasured and probably fights the Mac's git, which drops the index extension when it rewrites the index without the setting (inferred; PA rules fsmonitor out of shared config).
 
@@ -193,7 +190,7 @@ So the HEAD policy is part of D, not a follow-up. Candidates, all undesigned: "f
 - **Mac refs through the share.** Setup and refreshes read the Mac's refs and `packed-refs` through `/host-git`, which the rename window also hits; a missing ref fails loudly (PA), a missing `packed-refs` would hide refs (inferred).
 - **The image's git.** `launcher/image/Dockerfile` line 1 is `FROM node:24-bookworm-slim` and line 10 installs Debian 12's `git`, which is 2.39.5 (the package version; not run in the image). The lab image was alpine 3.24 with 2.54.1, so the lab's "new enough" verdict does not apply to pinata's image (lab-vm.md, Versions). `git replay` needs 2.44, is marked experimental (`man git-replay` 2.50.1: "THE BEHAVIOR MAY CHANGE"), and later releases changed its default from printing ref updates to applying them (review finding, not checked here), so E8's `replay | update-ref --stdin` depends on the version. Relative worktree paths need 2.48 (E5); the Linux fsmonitor daemon 2.55. Two ways out: ship a newer git in the image, or replay without `replay`: `merge-tree --write-tree --merge-base=<c>^ <onto> <c>` plus `commit-tree` per commit (tested here on 2.50.1: correct tree, exit 1 on a conflict; `--merge-base` needs 2.40, inferred), or on 2.39 `cherry-pick` in a scratch worktree on the volume (inferred).
 - **Worktrees on the Mac.** A sandbox-made worktree's `.git` file points at `<repo>/.git/worktrees/<id>`, which on the Mac is the Mac's own git dir, so the Mac's `git status` there fails with "not a git repository" and the main repository shows `?? .pi/` (lab L2).
-- **Combined with the `node_modules` design.** With a VM mount at the worktree's `node_modules`, `git worktree remove --force` fails with "Resource busy", rc 255, drops the worktree metadata anyway and leaves an orphaned folder (lab L2; node-modules.md). The subagents extension's `worktree remove` (CB 56) must therefore unmount first or be told how.
+- **Combined with mounts over `node_modules`.** With a VM mount at the worktree's `node_modules`, `git worktree remove --force` fails with "Resource busy", rc 255, drops the worktree metadata anyway and leaves an orphaned folder (lab L2; node-modules.md). The subagents extension's `worktree remove` would have to unmount first.
 - Repositories created during a session and submodules are not covered (PA).
 
 #### What D does and does not protect
@@ -202,7 +199,7 @@ Nothing the agent writes in a covered repository's git dir is read by the Mac's 
 
 - A repository cloned or initialised in the container during a session gets an agent-written `.git` on the Mac, because only repositories known at launch get a volume.
 - A nested `.git` planted anywhere in the tree is picked up by the IDE.
-- A repository whose config was already changed under today's model stays changed.
+- A repository whose config was already changed while `.git` was shared stays changed.
 - The host step forces off hooks and fsmonitor only; `include.path`, filters (`update-index --refresh` can run a clean filter on agent-written files) and other config still apply (inferred). The residual vectors outside `.git` remain.
 
 D also reverses `f7a62a98` by bringing back per-repository mounts, and it adds a host-side step that runs git in the Mac repository, which attempt 1 refused to do because the sandbox could write `.git/config` (PA). Safety is therefore not the main reason for D; correctness (no empty index) and, with the hook, descriptors are.
@@ -211,7 +208,7 @@ Precedent: `git clone --shared` (alternates), Docker Sandboxes' clone mode, cont
 
 ### E. Separate clone in the VM
 
-The agent works in a clone on the VM's disk. Safest and fastest, but IDEA sees the work only as fetched branches, which fails the live-work-tree constraint. Worth keeping as a mode.
+The agent works in a clone on the VM's disk. Safest and fastest, but IDEA sees the work only as fetched branches, which fails the live-work-tree constraint. With the code in the VM it is one of the arrangements of the end state ([plan.md](../plan.md#git)).
 
 ### F. Make git cheap
 
@@ -237,64 +234,31 @@ On this Mac, `git version 2.50.1 (Apple Git-155)`, throwaway repositories in the
 | E7 | gc with alternates | sandbox fetches Mac branch `topic`; Mac `branch -D topic`, `reflog expire --expire=now --all`, `gc --prune=now` | sandbox `fsck`: "invalid sha1 pointer"; with the Mac's `fetch sbx '+refs/heads/*:refs/pi/*'` first: intact |
 | E8 | Concurrent commits, one work tree | agent commits `f1` in sbx, user commits `f2` on the Mac, each with a pathspec; sandbox `fetch`, `git replay --onto host/main main~1..main \| update-ref --stdin`, `read-tree`; Mac guarded fast-forward | each side first saw the other's commit as ` M`; after replay both clean, work tree byte-identical, graph `B, U, A`; both commit `f3` differently: `replay` exit 1. The pathspec commits on disjoint files avoid the realistic `commit -am`, which would have committed the other side's change as a revert (see "The two-state window") |
 
-## Fit for pinata
+## Summary
 
-### Ranking
+| Design | Finding |
+|---|---|
+| B, full host broker | Rejected: moves code execution from config to argv, exposes the Mac's credentials, breaks `.git` readers. |
+| C, read-only plus write broker | Rejected: B's risks on the verbs that matter. |
+| A1, read-only binds | Open-ended list, silent config failures, keeps the window and the walk, reverses `f7a62a98` for little. |
+| A2, shared `.git` with an index guard | The only arrangement with one HEAD and one index over a live tree. Detects the empty index, cannot remove it; nothing for the walk. Undesigned and untested. |
+| D without the hook | All of D's price for the correctness gain only; 11 descriptors (lab L3). |
+| D with the fsmonitor hook | On a live tree, removes the empty-index hazard (lab L2) and the walk (lab L3) and keeps agent writes out of the Mac's `.git`. Price: the two-state window, a host sync, per-repository volumes, a newer git, reversing `f7a62a98`. |
+| E, clone in the VM | Best isolation and speed; no live work tree. |
 
-| Rank | Design | Role | Reason |
-|---|---|---|---|
-| 1 | D with the fsmonitor hook | target; spec next, build after the HEAD policy is tested | Removes the empty-index hazard (lab L2) and the walk (lab L3), keeps agent writes out of the Mac's `.git`, full git in the container; same shape as the `node_modules` answer. Price: the two-state window, a host sync, per-repository volumes, a newer git, reversing `f7a62a98`. |
-| 2 | A2, shared `.git` with an index guard | build now | The only arrangement with one HEAD and one index. Cheap and container-only; detects the empty index but cannot remove it; nothing for the walk. Undesigned and untested. |
-| 3 | D without the hook | not on its own | All of D's price for the correctness gain only; 11 descriptors (lab L3). |
-| 4 | E, clone in the VM | optional mode | Best isolation and speed; no live work tree. |
-| 5 | A1, read-only binds | no | Open-ended list, silent config failures, keeps the window and the walk, reverses `f7a62a98` for little. |
-| 6 | C, read-only plus write broker | no | B's risks on the verbs that matter. |
-| 7 | B, full host broker | no | Moves code execution from config to argv, exposes Mac credentials, breaks `.git` readers. |
+For any arrangement over one work tree the deciding question is whether the developer's git and the agent's git may hold different state over it. If not, one shared `.git` is the only answer. If so, D is the coherent one: each side owns its git dir and only git's transport crosses.
 
-### Conclusion
+### Costs of D
 
-"All git on the host" behind a shim stays rejected (E6, B). The problems, in measured order, are the walk (descriptors), the empty-index hazard of a shared `.git` (real and frequent while the Mac writes its index), and agent-writable config and hooks (accepted by the threat model today).
-
-There are two coherent arrangements, and the deciding question is whether the developer's git and the agent's git may hold different state over the same live work tree. If not, one shared `.git` (today) is the only answer, made safer by A2's guard, with the walk left as it is. If so, D with the hook is the more logical and elegant target: each side owns its git dir, only git's transport crosses, and the shape matches `node_modules`.
-
-Recommended order:
-
-1. Do not build the broker.
-2. Build the index guard (A2) now, with attempt 1's container-only settings and `safe.directory`, because the hazard exists today whatever is decided later.
-3. Treat D with the hook as the target and write its spec next, starting from the HEAD policy and a tested answer to the stash and branch-switch case. Do not build D before that.
-
-*Owner's decision, 2026-11-27:* the settings that reduce lock collisions are to be applied and removed by pinata through its commands, globally on the Mac; nothing else is decided for git. See the [Decision](../README.md#decision) section of the README.
-
-*Recommendation, 2026-11-27, not an owner decision:* given the recorded end state of the code in the VM, git would move with it. A clone on the VM's disk with results fetched as branches (E) becomes the end state rather than an optional mode, and neither the index guard (A2) nor D is worth building in the interim. Until then one risk remains: a real Mac-side write at the same moment as an agent commit can still produce the commit that deletes every file. `git commit` does not touch the work tree, so that commit can be undone. The ranking above stays as the record of what was found.
-
-### What D changes in the launcher
-
-- Discovery lists repositories under the root (lstat only, as attempt 1 proposed) and creates per repository a volume over `.git`, a read-only bind of the Mac's git dir, and a root exec to chown the volume. Volume subpaths (Docker 26 or later; pinata requires 28, CB 64) could make it one volume (inferred, not tried).
-- A setup exec per repository at start (lab L2's script), with `safe.directory`, the hook, and a check that the hook is reachable.
-- A host-side sync: fetch into `refs/pi/*` with a refspec wider than `refs/heads/*`, the HEAD policy, guarded fast-forward, notice on divergence, triggered by ref changes on both sides. New host code that runs git and writes refs and the index in the user's repositories, so `THREAT-MODEL.md` and "Files written" change.
-- A Mac watcher behind the hook, with a cookie barrier.
-- A git in the image of 2.44 or later, or a replay step without `git replay`.
-- The subagents extension's worktree removal must unmount a mounted `node_modules` first (lab L2).
-
-### Costs and what breaks
-
-- A volume, a bind and a setup exec per repository, dozens of repositories, at every launch (0.2 to 3.1 s each, lab L2).
+- A volume, a bind and a setup exec per repository, dozens of repositories, at every launch (0.2 to 3.1 s each, lab L2), and a host-side step that runs git and writes refs and the index in the user's repositories.
 - Agent commits reach IDEA after a delay; divergence leaves a `refs/pi/` branch; objects not yet fetched are lost with the VM (`pinata restart`).
 - The Mac and the agent no longer share stash, branches, config or the index. Mac-side work-tree git during a session is unsafe until the HEAD policy handles it.
 - Repositories created or renamed during a session, submodules and Mac-made linked worktrees are not covered at first; sandbox-made worktrees do not work from the Mac (lab L2).
-
-### Decisions for the owner
-
-1. Whether the two gits may hold different state over one live work tree (A2 or D).
-2. For D: the HEAD policy ("follow" or "review", with or without a rule against Mac-side work-tree git).
-3. Alternates over the share against a one-time copy of the objects to the VM's disk (no share reads, no gc coupling; copy time and disk per `restart`).
-4. A newer git in the image against a replay step that works on 2.39.
 
 ## Not verified
 
 | Claim | Check |
 |---|---|
-| A2's wrapper and pre-commit check catch the empty index | Lab L2's shared-`.git` loop with the guard in place: count refused, retried and bad commands. |
 | D's HEAD policy handles stash, shelve, rollback and branch switch on the Mac | Script each between an agent commit and the sync; the agent's next `commit -am` must not revert. |
 | A real Mac watcher behind the hook is correct | FSEvents watcher answering the hook; write-then-status race with a cookie file, 1,000 tries (lab-vm.md, "Not run"). |
 | A fuller refspec protects stash, remote-tracking refs, detached HEADs, reflogs from the Mac's gc | E7 with each kind of ref. |
@@ -332,4 +296,4 @@ Recommended order:
 - git-commit-id `useNativeGit`: https://issues.apache.org/jira/browse/ZEPPELIN-4304
 - virtio-fs and inotify: https://listman.redhat.com/archives/virtio-fs/2021-January/002544.html, https://lima-vm.io/docs/config/mount/
 - Commit `f7a62a98` (`git show f7a62a98`, its `launcher/REMOVED-DEFAULTS.md` and `launcher/THREAT-MODEL.md` diffs)
-- Lab on the VM: [lab-vm.md](lab-vm.md); pinata facts: [current-behaviour.md](current-behaviour.md); earlier measurements: [prior-attempts.md](prior-attempts.md)
+- Lab on the VM: [lab-vm.md](lab-vm.md); earlier measurements: [prior-attempts.md](prior-attempts.md)
