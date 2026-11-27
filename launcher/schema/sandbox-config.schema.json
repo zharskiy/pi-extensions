@@ -421,7 +421,7 @@
               }
             ]
           },
-          "description": "Names that may resolve to private addresses, such as a private gateway host; never IP literals or loopback."
+          "description": "Reachable names that may resolve to private addresses, such as a private gateway host; an entry does not make a host reachable, and IP literals and loopback are never allowed."
         }
       }
     },

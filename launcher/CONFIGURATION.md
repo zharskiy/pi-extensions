@@ -55,12 +55,12 @@ The file applies to every pi you start in the sandbox, in every folder. There ar
 | --- | --- | --- |
 | `egress.allow` | The hosts the sandbox may reach, besides `pi.dev` and your credential hosts. | `[]` |
 | `egress.deny` | Hosts that are never reachable. | `[]` |
-| `egress.privateHosts` | Names that may resolve to private addresses. | `[]` |
+| `egress.privateHosts` | Hosts that are already reachable (through `egress.allow`, a credential rule, a derived rule or a grant) and may resolve to private or loopback addresses. An entry here does not make a host reachable. | `[]` |
 | `image.packages` | Debian packages to add to the image. | none |
 | `image.npmGlobal` | npm packages to install globally, as `name@version`. | none |
 | `image.dockerfile` | A file of Dockerfile lines to add to the image. | none |
 | `image.reference` | A prebuilt image to pull by its digest instead of building one. | none |
-| `credentials.derive.enabled` | Whether credentials are read from your host files. | `true` |
+| `credentials.derive.enabled` | Whether credentials are read from your host files. `false` derives no credential rules and reads no glab, npm, pip or Maven files, but the git identity is still derived. | `true` |
 | `credentials.derive.hosts` | Read credentials only for these hosts. | every host |
 | `credentials.rules` | Credentials you define by hand. | `[]` |
 | `tls.extraCa` | Extra CA certificates to trust. | `[]` |
@@ -123,7 +123,19 @@ An `egress.deny` entry reaches further:
 - `*.example.com` denies every name under `example.com`, but not `example.com` itself.
 - An entry without a port denies every port.
 
-The proxy refuses a name that resolves only to private, loopback, link-local or reserved addresses. If an internal host needs that, list it in `egress.privateHosts`. Entries are names or `*.domain`, without a port.
+The proxy refuses a reachable name that resolves only to private, loopback, link-local or reserved addresses. This protects your Mac's local services and your network from a name whose DNS answer someone else controls, such as a host under an allowed wildcard. `egress.privateHosts` lists the reachable names that may resolve to such addresses. An entry there makes nothing reachable. Entries are names or `*.domain` (one label), without a port.
+
+An internal host you reach directly is in both lists:
+
+```json
+{ "egress": { "allow": ["packages.example.internal"], "privateHosts": ["packages.example.internal"] } }
+```
+
+An internal host with a credential rule is reachable through the rule, so it needs only `privateHosts`:
+
+```json
+{ "egress": { "privateHosts": ["gateway.example.internal"] } }
+```
 
 ### Grants
 
@@ -521,7 +533,7 @@ A registry, mirror or index without a credential and without an `egress.allow` e
 
 A derived glab token reaches everything it can on its host and its API host.
 
-To narrow what is derived, list the hosts you want in `credentials.derive.hosts`. `*.domain` entries work. Set `credentials.derive.enabled` to `false` to derive nothing.
+To narrow what is derived, list the hosts you want in `credentials.derive.hosts`. `*.domain` entries work. Set `credentials.derive.enabled` to `false` to stop deriving credentials; your git identity is still derived.
 
 Some credentials are not derived, for example uv's config and tokens that a project file reads from a variable. The list is in [known gaps](THREAT-MODEL.md#5-known-gaps).
 

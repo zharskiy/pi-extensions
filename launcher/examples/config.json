@@ -1,6 +1,6 @@
 {
   "egress": {
-    "allow": ["gateway.example.internal", "registry.example.internal", "*.git.example.internal"],
+    "allow": ["*.git.example.internal"],
     "deny": ["paste.example.internal"],
     "privateHosts": ["gateway.example.internal", "registry.example.internal", "*.git.example.internal"]
   },
