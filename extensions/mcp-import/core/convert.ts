@@ -66,6 +66,10 @@ const transportSkip = (type: unknown) => {
 };
 
 const pick = (raw: RawServer): PiServer | string => {
+  if (raw.type !== undefined && !PI_TYPES.includes(raw.type as string)) {
+    return transportSkip(raw.type);
+  }
+
   const out: PiServer = {};
 
   if (raw.type !== undefined) {
@@ -323,18 +327,17 @@ const convertCursor = (raw: RawServer, notes: string[], context: ConvertContext)
   return { server: picked, notes };
 };
 
+const CONVERTERS: Record<Source, (raw: RawServer, notes: string[], context: ConvertContext) => Conversion> = {
+  claude: convertClaude,
+  cursor: convertCursor,
+};
+
 export const convertServer = (source: Source, raw: unknown, context: ConvertContext): Conversion => {
   if (!isPlainObject(raw)) {
     return { skip: "is not an object" };
   }
 
-  if (raw.type !== undefined && !PI_TYPES.includes(raw.type as string)) {
-    return { skip: transportSkip(raw.type) };
-  }
-
-  const notes: string[] = [];
-
-  return source === "claude" ? convertClaude(raw, notes) : convertCursor(raw, notes, context);
+  return CONVERTERS[source](raw, [], context);
 };
 
 export const needsSignIn = (server: PiServer) =>
