@@ -30,6 +30,7 @@ import {
   type HostBind,
   type HostSessions,
   hostBinds,
+  hostLinkGuard,
   hostVolumeSources,
   type VolumeSource,
 } from "../workspace/index.ts";
@@ -46,7 +47,7 @@ import {
   probeSessionsShare,
   readyHostSessions,
 } from "./host-sessions.ts";
-import { hostPathNotices, proxyDetail } from "./launch-notices.ts";
+import { hostPathNotices, projectSkillLinkNotices, proxyDetail } from "./launch-notices.ts";
 import { beginLaunch, finishLaunch } from "./launches.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { writeOnce } from "./notices.ts";
@@ -305,6 +306,8 @@ const statusInput = (config: SandboxConfig): SandboxStatusInput => {
 const prepareFiles = async (input: PreparedInput) => {
   const { deps, context, backend, launch, sessions } = input;
   const { host } = input.prepared;
+  const reach = { home: deps.home, env: deps.env, stateDir: context.stateDir };
+  const guard = await hostLinkGuard(reach, context.mountedRoot);
   const [render] = await settleAll([
     renderAgentDir({
       stateDir: context.stateDir,
@@ -312,6 +315,7 @@ const prepareFiles = async (input: PreparedInput) => {
       hostHome: deps.home,
       derived: host.derived,
       status: statusInput(context.effective.config),
+      guard,
     }),
     readyHostSessions(deps, context, backend, { sessions, launchId: launch.launchId }),
   ]);
@@ -392,6 +396,19 @@ const prepareContainer = async (
   );
 
   writeNotices(deps, await hostPathNotices(input.piArgs, context.workspace.cwd, spec.mounts));
+
+  const { cwd, isGitRepo, repoRoot } = context.workspace;
+  const skillLinks = await projectSkillLinkNotices(
+    cwd,
+    isGitRepo ? repoRoot : context.mountedRoot,
+    spec.mounts,
+  );
+
+  await writeOnce(
+    deps,
+    context.stateDir,
+    skillLinks.map((notice) => `pinata: ${notice}`),
+  );
 
   return { containerId: id, spec, image };
 };

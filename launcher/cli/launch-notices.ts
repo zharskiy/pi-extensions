@@ -1,8 +1,8 @@
-import { access } from "node:fs/promises";
-import { resolve } from "node:path";
+import { access, readdir, realpath } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 import type { MountSpec } from "../backend/index.ts";
 import { visibleInside } from "../container/index.ts";
-import { realOrResolved } from "../shared/index.ts";
+import { isWithin, lstatOrUndefined, realOrResolved } from "../shared/index.ts";
 import type { SandboxProxy } from "./sandbox-proxy.ts";
 
 export const proxyDetail = (proxy: SandboxProxy) => `pid ${proxy.proxy.pid} port ${proxy.proxy.port}`;
@@ -42,4 +42,36 @@ export const hostPathNotices = async (args: string[], cwd: string, mounts: Mount
   );
 
   return checked.flat();
+};
+
+const foldersUpTo = (dir: string, top: string): string[] =>
+  dir === top || !isWithin(dir, top) ? [dir] : [dir, ...foldersUpTo(dirname(dir), top)];
+
+const danglingLink = async (path: string, mounts: MountSpec[]) => {
+  const info = await lstatOrUndefined(path);
+  const target = info?.isSymbolicLink() ? await realpath(path).catch(() => undefined) : undefined;
+
+  return target === undefined || visibleInside(target, mounts) ? [] : [{ path, target }];
+};
+
+const danglingSkillLinks = async (dir: string, mounts: MountSpec[]) => {
+  const own = await danglingLink(dir, mounts);
+  const names = own.length === 0 ? await readdir(dir).catch(() => []) : [];
+  const entries = await Promise.all(names.map((name) => danglingLink(join(dir, name), mounts)));
+
+  return [...own, ...entries.flat()];
+};
+
+export const projectSkillLinkNotices = async (cwd: string, top: string, mounts: MountSpec[]) => {
+  const dirs = [
+    join(cwd, ".pi", "skills"),
+    ...foldersUpTo(cwd, top).map((dir) => join(dir, ".agents", "skills")),
+  ];
+  const links = (await Promise.all(dirs.map((dir) => danglingSkillLinks(dir, mounts)))).flat();
+
+  return links.length === 0
+    ? []
+    : [
+        `project skills: links that dangle in the sandbox, because their targets lie outside the folders it mounts: ${links.map((link) => `${relative(cwd, link.path)} -> ${link.target}`).join(", ")}; move each target inside the workspace root, or bind its folder read-only at the same absolute path with mounts.binds in the user config`,
+      ];
 };

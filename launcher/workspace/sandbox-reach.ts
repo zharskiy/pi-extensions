@@ -1,4 +1,6 @@
-import { isWithin, knownRepos, realOrResolved, repoRecordOf } from "../shared/index.ts";
+import { join } from "node:path";
+import { hostAgentDir, isWithin, knownRepos, realOrResolved, repoRecordOf } from "../shared/index.ts";
+import { protectedRealPathGuard } from "./mounts.ts";
 import { checkRoot } from "./roots.ts";
 
 interface SandboxReachContext {
@@ -38,4 +40,22 @@ export const isSandboxWritable = async (paths: string[], context: SandboxReachCo
   const roots = await sandboxWriteRoots(context);
 
   return paths.some((path) => roots.some((root) => isWithin(path, root)));
+};
+
+const writeReason = (real: string, root: string) => {
+  if (isWithin(real, root)) {
+    return `it lies in ${root}, which a sandbox can write`;
+  }
+
+  return isWithin(root, real) ? `it holds ${root}, which a sandbox can write` : undefined;
+};
+
+export const hostLinkGuard = async (context: SandboxReachContext, mountedRoot: string) => {
+  const sessions = await realOrResolved(join(hostAgentDir(context.home, context.env), "sessions"));
+  const roots = [...new Set([mountedRoot, sessions, ...(await sandboxWriteRoots(context))])];
+  const protectedReason = protectedRealPathGuard(context);
+  const writable = (real: string) =>
+    roots.map((root) => writeReason(real, root)).find((reason) => reason !== undefined);
+
+  return { writable, link: (real: string) => protectedReason(real) ?? writable(real) };
 };

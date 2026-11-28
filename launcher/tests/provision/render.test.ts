@@ -1,10 +1,11 @@
-import { chmod, lstat, mkdir, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, readFile, realpath, rm, stat, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DerivedSandboxPi, DerivedTools } from "../../hostpi/index.ts";
 import { renderAgentDir } from "../../provision/index.ts";
+import type { HostLinkGuard } from "../../provision/types.ts";
 import { stateLayout } from "../../shared/index.ts";
-import { NO_STATUS, tempDir, writeText } from "./fixtures.ts";
+import { NO_STATUS, OPEN_GUARD, tempDir, writeText } from "./fixtures.ts";
 
 const NO_TOOLS: DerivedTools = {
   glab: [],
@@ -72,12 +73,6 @@ const hostAgentDir = async () => {
 
   await writeText(join(dir, "sessions", "one.jsonl"), "{}\n");
 
-  await writeText(join(dir, "outside", "secret.md"), "SECRET-OUTSIDE\n");
-
-  await symlink(join(dir, "outside"), join(dir, "prompts"));
-
-  await symlink(join(dir, "outside", "secret.md"), join(dir, "agents", "linked.md"));
-
   return dir;
 };
 
@@ -91,6 +86,7 @@ describe("renderAgentDir", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
 
     expect(result.renderDir).toBe(stateLayout(stateDir).render);
@@ -131,6 +127,7 @@ describe("renderAgentDir", () => {
         hostHome: host,
         derived: derived(key),
         status: NO_STATUS,
+        guard: OPEN_GUARD,
       });
     const first = await render();
     const auth = join(first.renderDir, "auth.json");
@@ -161,6 +158,7 @@ describe("renderAgentDir", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
 
     await writeText(join(result.renderDir, "AGENTS.md"), "RULES\n");
@@ -171,6 +169,7 @@ describe("renderAgentDir", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
 
     expect(await readFile(join(result.renderDir, "AGENTS.md"), "utf8")).toBe("rules\n");
@@ -186,6 +185,7 @@ describe("renderAgentDir", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
 
     await rm(join(host, "skills"), { recursive: true });
@@ -198,6 +198,7 @@ describe("renderAgentDir", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
     const tree = await listTree(result.renderDir);
 
@@ -213,6 +214,7 @@ describe("renderAgentDir", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
 
     expect(await listTree(result.renderDir)).toEqual([
@@ -238,6 +240,7 @@ describe("renderAgentDir", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
     const settings = await readFile(join(result.renderDir, "tools", "m2-settings.xml"), "utf8");
     const proxy = /<proxy>([\s\S]*)<\/proxy>/.exec(settings)?.[1] ?? "";
@@ -270,6 +273,7 @@ describe("renderAgentDir", () => {
         git: { name: 'Max "Z"', email: "max@corp.test" },
       }),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
     const read = (name: string) => readFile(join(result.renderDir, "tools", name), "utf8");
 
@@ -353,6 +357,7 @@ describe("renderAgentDir", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
     const files = await listTree(result.renderDir);
 
@@ -389,6 +394,7 @@ describe("renderAgentDir fix round", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
     const tree = await listTree(renderDir);
 
@@ -409,6 +415,7 @@ describe("renderAgentDir fix round", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
     const leftover = join(renderDir, `auth.json.${process.pid}.abcd1234.tmp`);
 
@@ -420,6 +427,7 @@ describe("renderAgentDir fix round", () => {
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
 
     expect(await listTree(renderDir)).not.toContain(basename(leftover));
@@ -435,6 +443,7 @@ describe("renderAgentDir fix round", () => {
         hostHome: host,
         derived: derived(`pinata-${String(index).repeat(24)}`),
         status: NO_STATUS,
+        guard: OPEN_GUARD,
       }),
     );
 
@@ -453,6 +462,7 @@ describe("renderAgentDir fix round", () => {
       hostHome: host,
       derived: derived(key),
       status: { ...NO_STATUS, setup },
+      guard: OPEN_GUARD,
     });
     const projectA = inputOf(first, `pinata-${"a".repeat(24)}`, [["npm", "ci"]]);
     const projectB = inputOf(second, `pinata-${"b".repeat(24)}`, []);
@@ -485,6 +495,7 @@ describe("the user skills of ~/.agents/skills", () => {
       hostHome,
       derived: derived(),
       status: NO_STATUS,
+      guard: OPEN_GUARD,
     });
 
   it("renders them into their own render subdir with the agent dir filters", async () => {
@@ -523,24 +534,55 @@ describe("the user skills of ~/.agents/skills", () => {
 });
 
 describe("symlinks in the rendered host entries", () => {
-  const render = async (host: string, hostHome: string) =>
+  const render = async (host: string, hostHome: string, guard: HostLinkGuard = OPEN_GUARD) =>
     renderAgentDir({
       stateDir: await tempDir("render-state"),
       hostAgentDir: host,
       hostHome,
       derived: derived(),
       status: NO_STATUS,
+      guard,
     });
 
-  it("are left out and named in a notice that says why and what to do", async () => {
-    const host = await hostAgentDir();
-    const { renderDir, notices } = await render(host, await tempDir("render-home"));
-    const tree = await listTree(renderDir);
+  const refusing = (root: string): HostLinkGuard => {
+    const reason = (real: string) => (real.startsWith(root) ? `it lies in ${root}` : undefined);
 
-    expect(tree.filter((path) => path.startsWith("prompts") || path === "agents/linked.md")).toEqual([]);
-    expect(notices).toContain(
-      "render: missing in the sandbox, because pinata follows no symlinks: agents/linked.md, prompts; replace each link with a real directory or file to carry it",
+    return { writable: reason, link: reason };
+  };
+
+  const realTemp = async (prefix: string) => realpath(await tempDir(prefix));
+
+  const copiedFiles = (tree: string[]) =>
+    tree.filter((path) => /^(agents-)?(skills|agents|prompts)\/.*[^/]$/.test(path));
+
+  it("are followed and copied as plain files and folders", async () => {
+    const host = await realTemp("render-host");
+    const home = await realTemp("render-home");
+
+    await writeText(join(home, "elsewhere", "review", "SKILL.md"), "review\n");
+
+    await writeText(join(home, "notes", "linked.md"), "linked\n");
+
+    await mkdir(join(host, "skills"));
+
+    await mkdir(join(host, "agents"));
+
+    await symlink(join(home, "elsewhere", "review"), join(host, "skills", "review"));
+
+    await symlink(join(home, "notes", "linked.md"), join(host, "agents", "linked.md"));
+
+    await symlink(join(home, "notes"), join(host, "prompts"));
+
+    const { renderDir, notices } = await render(host, home);
+    const tree = await listTree(renderDir);
+    const links = await Promise.all(
+      tree.map(async (path) => (await lstat(join(renderDir, path))).isSymbolicLink()),
     );
+
+    expect(copiedFiles(tree)).toEqual(["agents/linked.md", "prompts/linked.md", "skills/review/SKILL.md"]);
+    expect(await readFile(join(renderDir, "skills", "review", "SKILL.md"), "utf8")).toBe("review\n");
+    expect(links.some(Boolean)).toBe(false);
+    expect(notices).toEqual([]);
   });
 
   it("stay unreported for a skill linked into ~/.agents/skills, which the sandbox carries on its own", async () => {
@@ -550,13 +592,9 @@ describe("symlinks in the rendered host entries", () => {
 
     await writeText(join(skills, "deploy", "SKILL.md"), "deploy\n");
 
-    await writeText(join(home, "elsewhere", "review", "SKILL.md"), "review\n");
-
     await writeText(join(host, "skills", "own", "SKILL.md"), "own\n");
 
     await symlink(join(skills, "deploy"), join(host, "skills", "deploy"));
-
-    await symlink(join(home, "elsewhere", "review"), join(host, "skills", "review"));
 
     const { renderDir, notices } = await render(host, home);
     const tree = await listTree(renderDir);
@@ -565,12 +603,30 @@ describe("symlinks in the rendered host entries", () => {
       "agents-skills/deploy/SKILL.md",
       "skills/own/SKILL.md",
     ]);
-    expect(notices).toEqual([
-      "render: missing in the sandbox, because pinata follows no symlinks: skills/review; replace each link with a real directory or file to carry it",
-    ]);
+    expect(notices).toEqual([]);
   });
 
-  it("are reported at any depth and for files, even when they point into ~/.agents/skills", async () => {
+  it("follow ~/.agents/skills when it is itself a link and still carry a skill linked into it once", async () => {
+    const host = await tempDir("render-host");
+    const home = await tempDir("render-home");
+
+    await writeText(join(home, "dotfiles", "skills", "deploy", "SKILL.md"), "deploy\n");
+
+    await mkdir(join(host, "skills"), { recursive: true });
+
+    await mkdir(join(home, ".agents"));
+
+    await symlink(join(home, "dotfiles", "skills"), join(home, ".agents", "skills"));
+
+    await symlink(join(home, ".agents", "skills", "deploy"), join(host, "skills", "deploy"));
+
+    const { renderDir, notices } = await render(host, home);
+
+    expect(copiedFiles(await listTree(renderDir))).toEqual(["agents-skills/deploy/SKILL.md"]);
+    expect(notices).toEqual([]);
+  });
+
+  it("are followed at any depth", async () => {
     const host = await tempDir("render-host");
     const home = await tempDir("render-home");
     const skills = join(home, ".agents", "skills");
@@ -579,48 +635,164 @@ describe("symlinks in the rendered host entries", () => {
 
     await writeText(join(skills, "deploy", "SKILL.md"), "deploy\n");
 
-    await writeText(join(skills, "foo.md"), "foo\n");
+    await symlink("../_shared", join(skills, "deploy", "shared"));
+
+    const { renderDir, notices } = await render(host, home);
+
+    expect(copiedFiles(await listTree(renderDir))).toEqual([
+      "agents-skills/_shared/ref.md",
+      "agents-skills/deploy/SKILL.md",
+      "agents-skills/deploy/shared/ref.md",
+    ]);
+    expect(notices).toEqual([]);
+  });
+
+  it("are named with the reason and copied from nowhere when the guard refuses their target", async () => {
+    const host = await realTemp("render-host");
+    const home = await realTemp("render-home");
+    const work = join(home, "work");
+
+    await writeText(join(work, "x", "SKILL.md"), "planted\n");
 
     await writeText(join(host, "skills", "own", "SKILL.md"), "own\n");
 
-    await symlink("../_shared", join(skills, "deploy", "shared"));
+    await symlink(join(work, "x"), join(host, "skills", "x"));
 
-    await symlink(join(skills, "_shared", "ref.md"), join(host, "skills", "own", "ref.md"));
+    const { renderDir, notices } = await render(host, home, refusing(work));
 
-    await symlink(join(skills, "foo.md"), join(host, "skills", "foo.md"));
-
-    const { renderDir, notices } = await render(host, home);
-    const tree = await listTree(renderDir);
-
-    expect(tree.filter((path) => !path.endsWith("/") && /^(agents-)?skills\//.test(path))).toEqual([
-      "agents-skills/_shared/ref.md",
-      "agents-skills/deploy/SKILL.md",
-      "agents-skills/foo.md",
-      "skills/own/SKILL.md",
-    ]);
+    expect(copiedFiles(await listTree(renderDir))).toEqual(["skills/own/SKILL.md"]);
     expect(notices).toEqual([
-      "render: missing in the sandbox, because pinata follows no symlinks: skills/foo.md, skills/own/ref.md, ~/.agents/skills/deploy/shared; replace each link with a real directory or file to carry it",
+      `render: not carried into the sandbox: skills/x -> ${join(work, "x")} (it lies in ${work}); move each target out of the folder named, or put a real copy in place of the link`,
     ]);
   });
 
-  it("name ~/.agents/skills itself when it is a link, and the skills linked into it", async () => {
+  it("copy nothing from a source whose real folder a sandbox can write, and name it", async () => {
+    const host = await realTemp("render-host");
+    const home = await realTemp("render-home");
+    const work = join(home, "work");
+
+    await writeText(join(work, ".agents", "skills", "deploy", "SKILL.md"), "deploy\n");
+
+    await writeText(join(home, ".config", "gh", "hosts.yml"), "token: SECRET\n");
+
+    await symlink(
+      join(home, ".config", "gh", "hosts.yml"),
+      join(work, ".agents", "skills", "deploy", "hosts.md"),
+    );
+
+    await symlink(join(work, ".agents"), join(home, ".agents"));
+
+    const { renderDir, notices } = await render(host, home, refusing(work));
+
+    expect(copiedFiles(await listTree(renderDir))).toEqual([]);
+    expect(notices).toEqual([
+      `render: not carried into the sandbox: ~/.agents/skills (it lies in ${work}); move each target out of the folder named, or put a real copy in place of the link`,
+    ]);
+  });
+
+  it("stop at links that loop, silently", async () => {
+    const host = await tempDir("render-host");
+    const skill = join(host, "skills", "d");
+
+    await writeText(join(skill, "SKILL.md"), "d\n");
+
+    await writeText(join(skill, "a", "x.md"), "x\n");
+
+    await writeText(join(skill, "b", "y.md"), "y\n");
+
+    await symlink(skill, join(skill, "loop"));
+
+    await symlink(join(skill, "b"), join(skill, "a", "l"));
+
+    await symlink(join(skill, "a"), join(skill, "b", "l"));
+
+    const { renderDir, notices } = await render(host, await tempDir("render-home"));
+
+    expect(copiedFiles(await listTree(renderDir))).toEqual([
+      "skills/d/SKILL.md",
+      "skills/d/a/l/y.md",
+      "skills/d/a/x.md",
+      "skills/d/b/l/x.md",
+      "skills/d/b/y.md",
+    ]);
+    expect(notices).toEqual([]);
+  });
+
+  it("stop at a link whose target holds the folder it lies in", async () => {
+    const host = await tempDir("render-host");
+    const outside = await tempDir("render-outside");
+
+    await writeText(join(host, "skills", "s", "SKILL.md"), "s\n");
+
+    await writeText(join(outside, "y", "other.md"), "other\n");
+
+    await writeText(join(outside, "y", "z", "f.md"), "f\n");
+
+    await symlink(join(outside, "y"), join(outside, "y", "z", "up"));
+
+    await symlink(join(outside, "y", "z"), join(host, "skills", "s", "deep"));
+
+    const { renderDir, notices } = await render(host, await tempDir("render-home"));
+
+    expect(copiedFiles(await listTree(renderDir))).toEqual(["skills/s/SKILL.md", "skills/s/deep/f.md"]);
+    expect(notices).toEqual([]);
+  });
+
+  it("render past a linked folder that cannot be read", async () => {
+    const host = await tempDir("render-host");
+    const locked = join(await tempDir("render-outside"), "locked");
+
+    await writeText(join(host, "skills", "own", "SKILL.md"), "own\n");
+
+    await mkdir(locked);
+
+    await chmod(locked, 0o000);
+
+    await symlink(locked, join(host, "skills", "locked"));
+
+    const { renderDir, notices } = await render(host, await tempDir("render-home"));
+
+    expect(copiedFiles(await listTree(renderDir))).toEqual(["skills/own/SKILL.md"]);
+    expect(notices).toEqual([]);
+  });
+
+  it("skip a broken link silently", async () => {
+    const host = await tempDir("render-host");
+
+    await writeText(join(host, "skills", "own", "SKILL.md"), "own\n");
+
+    await symlink(join(host, "missing"), join(host, "skills", "gone"));
+
+    const { renderDir, notices } = await render(host, await tempDir("render-home"));
+
+    expect(copiedFiles(await listTree(renderDir))).toEqual(["skills/own/SKILL.md"]);
+    expect(notices).toEqual([]);
+  });
+
+  it("pass the name filters by both the link name and the target name", async () => {
     const host = await tempDir("render-host");
     const home = await tempDir("render-home");
 
-    await writeText(join(home, "dotfiles", "skills", "deploy", "SKILL.md"), "deploy\n");
+    await writeText(join(host, "skills", "x", "SKILL.md"), "x\n");
 
-    await writeText(join(host, "skills", ".keep"), "\n");
+    await writeText(join(home, "elsewhere", "notes.txt"), "notes\n");
 
-    await mkdir(join(home, ".agents"));
+    await writeText(join(home, "elsewhere", "id_rsa"), "key\n");
 
-    await symlink(join(home, "dotfiles", "skills"), join(home, ".agents", "skills"));
+    await writeText(join(home, "elsewhere", "secrets", "prod.md"), "prod\n");
 
-    await symlink(join(home, ".agents", "skills", "deploy"), join(host, "skills", "deploy"));
+    await symlink(join(home, "elsewhere", "notes.txt"), join(host, "skills", "x", ".env"));
 
-    const { notices } = await render(host, home);
+    await symlink(join(home, "elsewhere", "id_rsa"), join(host, "skills", "x", "notes"));
 
+    await symlink(join(home, "elsewhere", "secrets"), join(host, "skills", "x", "docs"));
+
+    const { renderDir, notices } = await render(host, home);
+
+    expect(copiedFiles(await listTree(renderDir))).toEqual(["skills/x/SKILL.md"]);
     expect(notices).toEqual([
-      "render: missing in the sandbox, because pinata follows no symlinks: skills/deploy, ~/.agents/skills; replace each link with a real directory or file to carry it",
+      "render: skills/x/docs looks like a secrets directory and stays out of the sandbox",
+      "render: left out of the sandbox: skills/x/.env (secret-looking name), skills/x/notes (secret-looking name)",
     ]);
   });
 
@@ -640,6 +812,7 @@ describe("symlinks in the rendered host entries", () => {
       hostHome: host,
       derived: derived(),
       status,
+      guard: OPEN_GUARD,
     };
     const first = await renderAgentDir(input);
     const path = join(first.renderDir, "tools", "status.json");
