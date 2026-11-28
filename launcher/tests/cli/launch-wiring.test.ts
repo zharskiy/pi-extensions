@@ -1,4 +1,4 @@
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LABELS, type RelayRequest } from "../../backend/index.ts";
@@ -248,6 +248,42 @@ describe("pi launch wiring", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(harness.stderr().split("looks like a secrets directory").length - 1).toBe(1);
+  });
+
+  it("follows no host skill link into a folder a sandbox can write", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const planted = join(harness.repoRoot, "planted");
+
+    await writeText(join(planted, "SKILL.md"), "# planted\n");
+
+    await writeText(join(harness.hostAgentDir, "skills", "own", "SKILL.md"), "# own\n");
+
+    await symlink(planted, join(harness.hostAgentDir, "skills", "planted"));
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(
+      `pinata: render: not carried into the sandbox: skills/planted -> ${planted} (it lies in `,
+    );
+    await expect(lstat(join(renderDirOf(harness), "skills", "planted"))).rejects.toThrow();
+  });
+
+  it("names a project skill link whose target the sandbox cannot see, up to the mounted root outside git", async () => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
+    const target = join(await realpath(await tempDir("outside-skill")), "x");
+
+    await rm(join(harness.repoRoot, ".git"), { recursive: true });
+
+    await mkdir(target);
+
+    await mkdir(join(harness.repoRoot, ".agents", "skills"), { recursive: true });
+
+    await symlink(target, join(harness.repoRoot, ".agents", "skills", "x"));
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(
+      `pinata: project skills: links that dangle in the sandbox, because their targets lie outside the folders it mounts: ../.agents/skills/x -> ${target}; `,
+    );
   });
 
   it("prints one line per denied host when pi exits", async () => {

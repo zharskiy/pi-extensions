@@ -1,7 +1,8 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, posix } from "node:path";
-import { isSecretName, lstatOrUndefined, readRegularFile } from "../shared/index.ts";
+import { isSecretName, isWithin, lstatOrUndefined, readRegularFile } from "../shared/index.ts";
 import { inPool } from "./pool.ts";
+import type { HostLinkGuard } from "./types.ts";
 
 interface TreeFile {
   data: Buffer;
@@ -83,46 +84,70 @@ const NOTHING: Found = { files: [], skipped: [], left: [], linked: [] };
 
 const PARALLEL_READS = 16;
 
-const isAgentsSkillLink = async (path: string, source: HostSource, rest: string) => {
+interface Walk {
+  source: HostSource;
+  guard: HostLinkGuard;
+}
+
+const isAgentsSkill = async (target: string, source: HostSource, rest: string) => {
   const root = source.agentsSkillsRoot;
 
   if (root === undefined || rest.includes("/")) {
     return false;
   }
 
-  const target = await realpath(path).catch(() => undefined);
-  const info = target === undefined ? undefined : await stat(target).catch(() => undefined);
+  const info = await stat(target).catch(() => undefined);
 
-  return target !== undefined && info?.isDirectory() === true && dirname(target) === root;
+  return info?.isDirectory() === true && dirname(target) === root;
 };
 
-const candidates = async (source: HostSource, path: string, rest: string): Promise<Found> => {
+const linkCandidates = async (walk: Walk, path: string, rest: string, chain: string[]): Promise<Found> => {
+  const target = await realpath(path).catch(() => undefined);
+
+  if (target === undefined || chain.some((dir) => isWithin(dir, target))) {
+    return NOTHING;
+  }
+
+  if (await isAgentsSkill(target, walk.source, rest)) {
+    return NOTHING;
+  }
+
+  const refusal = walk.guard.link(target);
+
+  return refusal === undefined
+    ? candidates(walk, target, rest, chain)
+    : { ...NOTHING, linked: [`${posix.join(walk.source.label, rest)} -> ${target} (${refusal})`] };
+};
+
+const candidates = async (walk: Walk, path: string, rest: string, chain: string[]): Promise<Found> => {
   const info = await lstatOrUndefined(path);
 
   if (info === undefined) {
     return NOTHING;
   }
 
-  const topLevel = rest === "";
-  const key = posix.join(source.key, rest);
-  const label = posix.join(source.label, rest);
-
   if (info.isSymbolicLink()) {
-    return (await isAgentsSkillLink(path, source, rest)) ? NOTHING : { ...NOTHING, linked: [label] };
+    return linkCandidates(walk, path, rest, chain);
   }
 
-  if (info.isDirectory() && !topLevel && SKIPPED_DIRS.has(basename(path))) {
+  const topLevel = rest === "";
+  const key = posix.join(walk.source.key, rest);
+  const label = posix.join(walk.source.label, rest);
+  const named = (test: (name: string) => boolean) =>
+    !topLevel && (test(basename(path)) || test(posix.basename(rest)));
+
+  if (info.isDirectory() && named((name) => SKIPPED_DIRS.has(name))) {
     return NOTHING;
   }
 
-  if (info.isDirectory() && !topLevel && isSecretDir(basename(path), key)) {
+  if (info.isDirectory() && named((name) => isSecretDir(name, key))) {
     return { ...NOTHING, skipped: [label] };
   }
 
   if (info.isDirectory()) {
-    const names = (await readdir(path)).sort();
+    const names = (await readdir(path).catch(() => [])).sort();
     const nested = await Promise.all(
-      names.map((name) => candidates(source, join(path, name), posix.join(rest, name))),
+      names.map((name) => candidates(walk, join(path, name), posix.join(rest, name), [...chain, path])),
     );
 
     return {
@@ -137,13 +162,28 @@ const candidates = async (source: HostSource, path: string, rest: string): Promi
     return NOTHING;
   }
 
-  if (!topLevel && isExcludedName(basename(path))) {
+  if (named(isExcludedName)) {
     return { ...NOTHING, left: [`${label} (secret-looking name)`] };
   }
 
   return info.size > MAX_FILE_BYTES
     ? { ...NOTHING, left: [`${label} (over 8 MiB)`] }
     : { ...NOTHING, files: [{ path, key, label }] };
+};
+
+const sourceCandidates = async (source: HostSource, guard: HostLinkGuard): Promise<Found> => {
+  const info = await lstatOrUndefined(source.path);
+  const real = await realpath(source.path).catch(() => undefined);
+
+  if (info === undefined || real === undefined) {
+    return NOTHING;
+  }
+
+  const refusal = (info.isSymbolicLink() ? guard.link : guard.writable)(real);
+
+  return refusal === undefined
+    ? candidates({ source, guard }, real, "", [])
+    : { ...NOTHING, linked: [`${source.label} (${refusal})`] };
 };
 
 type Read = { file: [string, TreeFile] } | { left?: string };
@@ -155,7 +195,9 @@ const readCandidate = async (candidate: Candidate): Promise<Read> => {
     return {};
   }
 
-  return holdsPrivateKey(basename(candidate.path), file.data)
+  const named = [basename(candidate.path), posix.basename(candidate.key)];
+
+  return named.some((name) => holdsPrivateKey(name, file.data))
     ? { left: `${candidate.label} (private key)` }
     : { file: [candidate.key, { data: file.data, mode: modeOf(file.mode) }] };
 };
@@ -170,11 +212,14 @@ const linkedNotice = (linked: string[]) =>
   linked.length === 0
     ? []
     : [
-        `render: missing in the sandbox, because pinata follows no symlinks: ${linked.join(", ")}; replace each link with a real directory or file to carry it`,
+        `render: not carried into the sandbox: ${linked.join(", ")}; move each target out of the folder named, or put a real copy in place of the link`,
       ];
 
-export const readHostEntries = async (sources: HostSource[]): Promise<{ tree: Tree; notices: string[] }> => {
-  const found = await Promise.all(sources.map((source) => candidates(source, source.path, "")));
+export const readHostEntries = async (
+  sources: HostSource[],
+  guard: HostLinkGuard,
+): Promise<{ tree: Tree; notices: string[] }> => {
+  const found = await Promise.all(sources.map((source) => sourceCandidates(source, guard)));
   const reads = await inPool(
     found.flatMap((entry) => entry.files),
     PARALLEL_READS,

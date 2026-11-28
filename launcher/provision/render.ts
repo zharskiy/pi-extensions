@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { GUEST_PROXY_HOST, GUEST_PROXY_PORT } from "../backend/index.ts";
 import type { DerivedTools, GlabHost } from "../hostpi/index.ts";
@@ -6,7 +6,6 @@ import {
   escapeXml,
   type IniSection,
   jsonText,
-  lstatOrUndefined,
   type MavenHeader,
   type MavenRepository,
   type MavenServer,
@@ -192,7 +191,7 @@ const toolFiles = (tools: DerivedTools): Array<[string, Buffer]> => [
 export const hostAgentsSkillsDir = (hostHome: string) => join(hostHome, ".agents", "skills");
 
 const realDirectory = async (path: string) => {
-  const info = await lstatOrUndefined(path);
+  const info = await stat(path).catch(() => undefined);
 
   return info?.isDirectory() ? realpath(path) : undefined;
 };
@@ -213,7 +212,7 @@ const hostSources = async (input: RenderInput): Promise<HostSource[]> => {
 };
 
 const desiredTree = async (input: RenderInput): Promise<{ tree: Tree; notices: string[] }> => {
-  const copied = await readHostEntries(await hostSources(input));
+  const copied = await readHostEntries(await hostSources(input), input.guard);
   const files = input.derived.files;
   const rendered: Array<[string, unknown]> = [
     ["auth.json", files["auth.json"]],

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -8,7 +8,7 @@ import type { Backend, MountSpec, VmPath, VmTarget } from "../../backend/index.t
 import { onClosedOutput } from "../../cli/deps.ts";
 import { CLEANUP_WAITING, GROUND_WAITING, withGroundLock } from "../../cli/ground.ts";
 import { run, runPinata } from "../../cli/index.ts";
-import { hostPathNotices } from "../../cli/launch-notices.ts";
+import { hostPathNotices, projectSkillLinkNotices } from "../../cli/launch-notices.ts";
 import { liveLaunches } from "../../grants/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { hostSessionsDir } from "../../workspace/index.ts";
@@ -544,5 +544,51 @@ describe("pi arguments that name host files", () => {
       `@target/built.md: ${join(repo, "target", "built.md")} lies outside the folders mounted in the sandbox, so pi inside cannot read it`,
       `-e ../notes: ${outside} lies outside the folders mounted in the sandbox, so pi inside cannot read it`,
     ]);
+  });
+});
+
+describe("project skill links", () => {
+  it("names the links of the project skill folders whose targets the sandbox cannot see", async () => {
+    const root = await realpath(await tempDir("skill-links"));
+    const repo = join(root, "repo");
+    const cwd = join(repo, "src");
+    const dotfiles = join(root, "dotfiles");
+    const reference = join(root, "reference");
+
+    await Promise.all(
+      [
+        join(cwd, ".pi", "skills"),
+        join(repo, ".agents", "skills"),
+        join(repo, "shared", "bar"),
+        join(dotfiles, "foo"),
+        join(dotfiles, "skills"),
+        join(reference, "baz"),
+        join(root, ".agents", "skills"),
+      ].map((dir) => mkdir(dir, { recursive: true })),
+    );
+
+    await symlink(join(dotfiles, "foo"), join(cwd, ".pi", "skills", "foo"));
+
+    await mkdir(join(cwd, ".agents"));
+
+    await symlink(join(dotfiles, "skills"), join(cwd, ".agents", "skills"));
+
+    await symlink(join(repo, "shared", "bar"), join(repo, ".agents", "skills", "bar"));
+
+    await symlink(join(root, "missing"), join(repo, ".agents", "skills", "gone"));
+
+    await symlink(join(reference, "baz"), join(repo, ".agents", "skills", "baz"));
+
+    await symlink(join(dotfiles, "foo"), join(root, ".agents", "skills", "above"));
+
+    const mounts: MountSpec[] = [
+      { source: repo, target: repo, readOnly: false, kind: "bind" },
+      { source: reference, target: reference, readOnly: true, kind: "bind" },
+    ];
+
+    expect(await projectSkillLinkNotices(cwd, repo, mounts)).toEqual([
+      `project skills: links that dangle in the sandbox, because their targets lie outside the folders it mounts: .pi/skills/foo -> ${join(dotfiles, "foo")}, .agents/skills -> ${join(dotfiles, "skills")}; move each target inside the workspace root, or bind its folder read-only at the same absolute path with mounts.binds in the user config`,
+    ]);
+    expect(await projectSkillLinkNotices(repo, repo, mounts)).toEqual([]);
   });
 });

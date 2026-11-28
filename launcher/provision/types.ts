@@ -16,12 +16,18 @@ export interface SandboxStatusInput {
   services: Array<{ name: string; command: string[]; ready?: string[]; ports: number[] }>;
 }
 
+export interface HostLinkGuard {
+  writable: (real: string) => string | undefined;
+  link: (real: string) => string | undefined;
+}
+
 export interface RenderInput {
   stateDir: string;
   hostAgentDir: string;
   hostHome: string;
   derived: DerivedSandboxPi;
   status: SandboxStatusInput;
+  guard: HostLinkGuard;
 }
 
 export interface RenderResult {

@@ -1,8 +1,8 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir, realpath, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { repoHash, writeRepoRecord } from "../../shared/index.ts";
-import { isSandboxWritable, sandboxWriteRoots } from "../../workspace/index.ts";
+import { hostLinkGuard, isSandboxWritable, sandboxWriteRoots } from "../../workspace/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
 const setup = async () => {
@@ -51,5 +51,35 @@ describe("sandbox reach", () => {
     expect(await sandboxWriteRoots(context)).toEqual([elsewhere]);
     expect(await sandboxWriteRoots({ ...context, workspaceRoot: context.home })).toEqual([elsewhere]);
     expect(await isSandboxWritable([join(work, "a")], context)).toBe(false);
+  });
+
+  it("refuses host links into or above a folder a sandbox can write, and link targets in protected paths", async () => {
+    const { work, elsewhere, base, ...context } = await setup();
+    const mounted = join(base, "mounted");
+    const guard = await hostLinkGuard({ ...context, workspaceRoot: work }, mounted);
+
+    expect(guard.writable(join(mounted, "x"))).toBe(`it lies in ${mounted}, which a sandbox can write`);
+    expect(guard.writable(join(elsewhere, "x"))).toBe(`it lies in ${elsewhere}, which a sandbox can write`);
+    expect(guard.writable(join(base, "elsewhere"))).toBe(`it holds ${elsewhere}, which a sandbox can write`);
+    expect(guard.writable(join(base, "other"))).toBeUndefined();
+    expect(guard.link(join(base, "other"))).toBeUndefined();
+    expect(guard.link(join(context.home, ".ssh", "id_ed25519"))).toBe("it is inside ~/.ssh");
+    expect(guard.writable(join(context.home, ".ssh", "id_ed25519"))).toBeUndefined();
+  });
+
+  it("refuses host links into or above a linked host sessions dir", async () => {
+    const { work, elsewhere, base, ...context } = await setup();
+    const data = join(base, "data", "pi-sessions");
+
+    await mkdir(data, { recursive: true });
+
+    await mkdir(join(context.home, ".pi", "agent"), { recursive: true });
+
+    await symlink(data, join(context.home, ".pi", "agent", "sessions"));
+
+    const guard = await hostLinkGuard(context, work);
+
+    expect(guard.link(join(data, "x.jsonl"))).toBe(`it lies in ${data}, which a sandbox can write`);
+    expect(guard.link(join(base, "data"))).toBe(`it holds ${data}, which a sandbox can write`);
   });
 });

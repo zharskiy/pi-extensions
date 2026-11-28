@@ -13,5 +13,5 @@ export {
   rootRefusal,
   sharedRootOf,
 } from "./roots.ts";
-export { isSandboxWritable, sandboxWriteRoots } from "./sandbox-reach.ts";
+export { hostLinkGuard, isSandboxWritable, sandboxWriteRoots } from "./sandbox-reach.ts";
 export type { Workspace } from "./types.ts";

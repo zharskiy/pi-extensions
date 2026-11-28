@@ -6,6 +6,7 @@ import { deriveHostTools, deriveSandboxPi } from "../../hostpi/index.ts";
 import { renderAgentDir } from "../../provision/index.ts";
 import { envSecretsFor } from "../../proxy/index.ts";
 import { placeholderFor, toolConfigValue } from "../../shared/index.ts";
+import { OPEN_GUARD } from "../provision/fixtures.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 import { braced, tempDir, writeExecutable, writeText } from "./fixtures.ts";
 
@@ -459,6 +460,7 @@ describe("URL userinfo in npmrc and pip.conf", () => {
       hostHome: home,
       derived: sandbox,
       status: { resources: { pids: 512 }, volumes: [], binds: [], setup: [], services: [] },
+      guard: OPEN_GUARD,
     });
     const rendered = await treeText(renderDir);
     const leaked = Object.values(URL_SECRETS).filter(
@@ -603,6 +605,7 @@ describe("Maven settings in the sandbox", () => {
       hostHome: home,
       derived: sandbox,
       status: { resources: { pids: 512 }, volumes: [], binds: [], setup: [], services: [] },
+      guard: OPEN_GUARD,
     });
 
     return { tools, rendered: await treeText(renderDir) };

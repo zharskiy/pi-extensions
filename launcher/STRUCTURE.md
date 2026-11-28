@@ -36,7 +36,7 @@ cli/launch.ts                  the pi pipeline with its stages and progress line
 cli/context.ts                 the launch context: the folder to mount, the guard and the workspaceRoot required for the sandbox before the search and the host check (checkHostRoot) for --no-sandbox, config, discovery, the git dir check after it and the mounted root
 cli/vm.ts                      VM start (only with a share plan, the workspaceRoot shares when stopped), the one reconcile of shares and size, trust store, the automatic VM size and the host limits (one clamp), the memory check against the automatic size when vm.memoryGiB is unset, the VM paths a launch needs, the workspaceRoot share list and its nesting check, the VM's busy check from cli/busy.ts
 cli/clipboard.ts               the host clipboard of a launch: pbcopy for copies, osascript for a Ctrl+V file path or PNG
-cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
+cli/launch-notices.ts          the launch notice texts, the host-file flag notice, the project skill link notice and the proxy stage detail
 cli/terminal.ts                the host terminal: streams, size read at use, resize
 cli/prompt/types.ts            the prompt, spec, key, terminal session and ui types of pinata init
 cli/prompt/terminal.ts         finding the terminal (/dev/tty) and its restore, the ui options (glyphs, colour), the timers
@@ -130,7 +130,7 @@ workspace/mounts.ts            the protected path table
 workspace/roots.ts             the workspaceRoot checks (unset, missing, the home or above it, the guard's protected paths and system dirs, outside the root, a git dir or common dir outside the root; the host launch runs only the inside-the-root ones) and the checked root the VM shares
 workspace/binds.ts             the mounts.binds sources on the host: resolved, must exist, the root guard, and the folder the VM must share; the mounts.volumes sources through the same guard
 workspace/pi-session-dir.ts    pi's session slug and the host session dir choice
-workspace/sandbox-reach.ts     the roots a sandbox can write (sandboxWriteRoots: the checked workspace root, the folders one has run in and the roots those runs mounted) and whether a path lies in them
+workspace/sandbox-reach.ts     the roots a sandbox can write (sandboxWriteRoots: the checked workspace root, the folders one has run in and the roots those runs mounted) and whether a path lies in them, and hostLinkGuard, which refuses a render source or link target in or above them or in a protected path
 workspace/git/layout.ts        the nearest folder with a .git entry, and the git dir and common dir read from the files
 ```
 
@@ -234,7 +234,7 @@ provision/index.ts             public surface
 provision/types.ts             render and sync types
 provision/render.ts            the render dir, its tool files (the gitconfig led by the two core keys) and its host sources (agent dir entries and ~/.agents/skills); one render dir per install under the render lock
 provision/status.ts            the sandbox status file tools/status.json from the config-derived RenderInput.status (proxy, resources, volumes, binds, setup, services with their ports)
-provision/tree.ts              filtered copy of host sources, following no link, with one notice for what was left out and one for skipped links
+provision/tree.ts              filtered copy of host sources, following links the guard allows and stopping at loops, with one notice for what was left out and one for refused links and sources
 provision/pool.ts              bounded parallel work
 provision/sync.ts              the agent files sync under sync.lock: write-back to the host, then settings.json and pi-*.json into the volume, and the baseline, one baseline and package stamp per install, kept for the files a failed refresh left untouched
 provision/write-back.ts        the write-back table compiled into value checks inside the ceiling, the allowlist hash of the baseline, the three-way merge per key and its lines (no I/O)
@@ -371,7 +371,7 @@ tests/workspace/discover.test.ts     discovery: the git root, the git dir and co
 tests/workspace/guard.test.ts        the workspace guard
 tests/workspace/mounts.test.ts       the protected path table
 tests/workspace/roots.test.ts        workspaceRoot: the unset and launch refusals, the checked root, the home, protected and system dirs, links
-tests/workspace/sandbox-reach.test.ts  the roots a sandbox can write: the workspace root and the recorded folders
+tests/workspace/sandbox-reach.test.ts  the roots a sandbox can write: the workspace root and the recorded folders, and the host link guard
 tests/workspace/binds.test.ts        mounts.binds sources: resolution, the folder to share, the refusals
 tests/workspace/pi-session-dir.test.ts  slug and host session dir choice
 tests/backend/conformance.ts         the backend conformance suite

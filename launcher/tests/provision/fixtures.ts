@@ -1,5 +1,5 @@
 import type { Backend } from "../../backend/index.ts";
-import type { SandboxStatusInput } from "../../provision/types.ts";
+import type { HostLinkGuard, SandboxStatusInput } from "../../provision/types.ts";
 
 export { tempDir, writeText } from "../support/temp-dir.ts";
 
@@ -31,4 +31,9 @@ export const NO_STATUS: SandboxStatusInput = {
   binds: [],
   setup: [],
   services: [],
+};
+
+export const OPEN_GUARD: HostLinkGuard = {
+  writable: () => undefined,
+  link: () => undefined,
 };
