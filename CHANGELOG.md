@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.3.0](https://github.com/zharskiy/pinata/compare/v1.2.1...v1.3.0) (2026-11-28)
+
+
+### Features
+
+* **launcher:** apply git settings that keep a status from rewriting the index ([eff0d29](https://github.com/zharskiy/pinata/commit/eff0d294595d7922ecd2c02ea69fbbbc01a72c60))
+* **launcher:** pin a prebuilt image with one reference that carries its digest ([579f4d3](https://github.com/zharskiy/pinata/commit/579f4d314aa550931ec19112a25c61005ac6539c))
+* **launcher:** raise the Mac's open-file limit at install ([077fcc7](https://github.com/zharskiy/pinata/commit/077fcc77ea5ebab6c6a4cc1878a84553c59c41c7))
+* **launcher:** remove the build output overlays ([451a084](https://github.com/zharskiy/pinata/commit/451a084c97dd25f119237cc36c10afbf7488be3a))
+* **launcher:** remove the overlays, apply git settings, raise the open-file limit, seed volumes ([5358e7f](https://github.com/zharskiy/pinata/commit/5358e7fce0d11ce85e8ca957748f72fea9105235))
+* **launcher:** seed a volume from a folder on the Mac ([72bde3a](https://github.com/zharskiy/pinata/commit/72bde3a514f8399abebebe9df0ca29eb4747adf5))
+
+
+### Bug Fixes
+
+* **launcher:** finish the install without sudo and say a low open-file limit once ([36b077c](https://github.com/zharskiy/pinata/commit/36b077c0a08dc5d76add079a90c59026d7447063))
+* **launcher:** keep the user's own git and shell settings intact around pinata's block ([7684530](https://github.com/zharskiy/pinata/commit/7684530f0c047996ae551f42e17b70db273daad3))
+* **launcher:** skip the volume copy off macOS ([5a23011](https://github.com/zharskiy/pinata/commit/5a230116edadfb2da4251714867af6ad7123b84e))
+* **launcher:** write a non-ASCII home path into the PATH block as UTF-8 ([cfa159e](https://github.com/zharskiy/pinata/commit/cfa159ee1d222bc4c394fa535570d1510ae9a851))
+
 ## [1.2.1](https://github.com/zharskiy/pinata/compare/v1.2.0...v1.2.1) (2026-11-26)
 
 
