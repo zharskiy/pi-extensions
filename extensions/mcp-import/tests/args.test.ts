@@ -10,12 +10,18 @@ describe("mcp-import arguments", () => {
     expect(parseArgs(" cursor apply  project ")).toEqual({ source: "cursor", scope: "project", apply: true });
   });
 
+  it("reads codex as a source", () => {
+    expect(parseArgs("codex project")).toEqual({ source: "codex", scope: "project", apply: false });
+  });
+
   it("asks for the interactive choice without arguments", () => {
     expect(parseArgs("  ")).toEqual({ interactive: true });
   });
 
   it("rejects an unknown tool and unknown words", () => {
-    expect(parseArgs("other")).toEqual({ error: expect.stringMatching(/^unknown tool "other"/) });
+    expect(parseArgs("other")).toEqual({
+      error: expect.stringMatching(/^unknown tool "other" \(available: claude, cursor, codex\)/),
+    });
     expect(parseArgs("claude now")).toEqual({ error: expect.stringMatching(/^unknown argument "now"/) });
   });
 
@@ -23,7 +29,9 @@ describe("mcp-import arguments", () => {
     expect(completeArgs("c")).toEqual([
       { value: "claude", label: "claude" },
       { value: "cursor", label: "cursor" },
+      { value: "codex", label: "codex" },
     ]);
+    expect(completeArgs("co")).toEqual([{ value: "codex", label: "codex" }]);
     expect(completeArgs("claude ")).toEqual([
       { value: "claude project", label: "project" },
       { value: "claude apply", label: "apply" },

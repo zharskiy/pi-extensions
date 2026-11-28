@@ -54,7 +54,7 @@ The package installs its skills (`pinata-code-style`, the code style the [subage
 - **[subagents](extensions/subagents/README.md)**: background agents you run, watch, message and stop from the main session, optionally in their own git worktree, with MCP tools. A panel below the editor and an `/agents` overlay.
 - **[questionnaire](extensions/questionnaire/README.md)**: a tool the model uses to ask you a batch of multiple-choice questions in one inline form.
 - **[style](extensions/style/README.md)**: `/style concise` for short, result-first replies from the main session; `/style normal` turns it off.
-- **[mcp-import](extensions/mcp-import/README.md)**: `/mcp-import <claude|cursor>` copies MCP servers into pi's `mcp.json`. A dry run unless you add `apply`.
+- **[mcp-import](extensions/mcp-import/README.md)**: `/mcp-import <claude|cursor|codex>` copies MCP servers into pi's `mcp.json`. A dry run unless you add `apply`.
 
 **Session awareness**
 
@@ -86,7 +86,7 @@ Start pi and try:
 
 - **Skills:** nothing to do when they live in `.agents/skills`. Pi reads `~/.agents/skills` and `.agents/skills` as well as its own `~/.pi/agent/skills` and `.pi/skills`.
 - **Agent definitions and instruction files:** pi reads `AGENTS.md` and `CLAUDE.md` as they are. Rewrite agents by hand: `/agents create <name>` sets up a new agent (see [subagents](extensions/subagents/README.md)), then copy the old prompt into its body.
-- **MCP servers:** `/mcp-import claude` or `/mcp-import cursor` (add `project` for the project's servers) shows what it would copy; add `apply` to write it, then `/reload`. OAuth sign-ins do not transfer: sign in again with `/mcp`.
+- **MCP servers:** `/mcp-import claude`, `/mcp-import cursor` or `/mcp-import codex` (add `project` for the project's servers) shows what it would copy; add `apply` to write it, then `/reload`. OAuth sign-ins do not transfer: sign in again with `/mcp`.
 
 </details>
 

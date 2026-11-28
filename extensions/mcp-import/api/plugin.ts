@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { Host } from "../../../platform/pi-adapter/index.ts";
 import type { Plugin, SettingsScope } from "../../../platform/shared/index.ts";
 import {
@@ -23,7 +24,7 @@ import {
   UNTRUSTED_ONLY,
 } from "../ui/report.ts";
 
-export const createMcpImport = (host: Host, home: string) => {
+export const createMcpImport = (host: Host, home: string, codexHome: string) => {
   const notify = (message: string) => {
     host.ui.notify(message, "info");
   };
@@ -35,7 +36,7 @@ export const createMcpImport = (host: Host, home: string) => {
   const places = () => {
     const { cwd, agentDir } = host.session();
 
-    return { home, cwd, agentDir };
+    return { home, cwd, agentDir, codexHome };
   };
 
   const prepare = (source: Source, scope: SettingsScope) => prepareImport(source, scope, places());
@@ -156,7 +157,7 @@ export const createMcpImport = (host: Host, home: string) => {
   };
 
   host.registerCommand("mcp-import", {
-    description: `Import MCP servers from Claude Code or Cursor into pi's mcp.json; without arguments pick the source and servers, with arguments a dry run unless you add apply: ${USAGE}`,
+    description: `Import MCP servers from Claude Code, Cursor or Codex into pi's mcp.json; without arguments pick the source and servers, with arguments a dry run unless you add apply: ${USAGE}`,
     complete: completeArgs,
     run: async (text) => {
       const args = parseArgs(text);
@@ -184,6 +185,6 @@ export const createMcpImport = (host: Host, home: string) => {
 export const mcpImportPlugin: Plugin<never, never, undefined> = {
   id: "mcp-import",
   enable({ host }) {
-    createMcpImport(host, homedir());
+    createMcpImport(host, homedir(), resolve(process.env.CODEX_HOME || join(homedir(), ".codex")));
   },
 };

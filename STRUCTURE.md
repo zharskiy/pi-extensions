@@ -38,7 +38,7 @@ pinata/
 
 ## Config files
 
-- `package.json`: version, `name` `@zharskiy/pinata`, `bin` (`pinata`, `launcher/bin/pinata.js`), `pi.extensions` (the 15 `extensions/<name>/index.ts` entries), `pi.skills` (`./skills`), the published `files`, and the scripts: `check` (typecheck, lint, knip, test), `build:launcher` (compiles `launcher/` to the gitignored `launcher/dist/`, run by `prepack`, because Node does not strip types under `node_modules`), `test`, `test:live`, `evals`, `lint`, `format`, `typecheck`, `knip`.
+- `package.json`: version, `name` `@zharskiy/pinata`, `bin` (`pinata`, `launcher/bin/pinata.js`), `pi.extensions` (the 15 `extensions/<name>/index.ts` entries), `pi.skills` (`./skills`), the published `files`, `dependencies` (`smol-toml`, mcp-import's TOML reader for Codex), and the scripts: `check` (typecheck, lint, knip, test), `build:launcher` (compiles `launcher/` to the gitignored `launcher/dist/`, run by `prepack`, because Node does not strip types under `node_modules`), `test`, `test:live`, `evals`, `lint`, `format`, `typecheck`, `knip`.
 - `tsconfig.json`: strict NodeNext, no emit, over every code folder.
 - `vitest.config.ts`: three projects, picked with `--project`:
   - `unit` (`npm run test`): every `tests/` folder (`launcher/tests/` included) and `test/`, without `*.live.test.ts`.

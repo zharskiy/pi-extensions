@@ -1,6 +1,6 @@
 import type { SettingsScope } from "../../../platform/shared/index.ts";
 
-const SOURCES = ["claude", "cursor"] as const;
+const SOURCES = ["claude", "cursor", "codex"] as const;
 
 export type Source = (typeof SOURCES)[number];
 
@@ -8,7 +8,7 @@ export type ImportArgs = { source: Source; scope: SettingsScope; apply: boolean 
 
 const FLAGS = ["project", "apply"];
 
-export const USAGE = "/mcp-import <claude|cursor> [project] [apply]";
+export const USAGE = "/mcp-import <claude|cursor|codex> [project] [apply]";
 
 const isSource = (word: string): word is Source => (SOURCES as readonly string[]).includes(word);
 

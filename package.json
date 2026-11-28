@@ -89,6 +89,9 @@
     "knip": "knip",
     "check": "npm run typecheck && npm run lint && npm run knip && npm run test"
   },
+  "dependencies": {
+    "smol-toml": "^1.9.1"
+  },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
