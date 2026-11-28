@@ -1,6 +1,6 @@
 import type { Backend } from "../backend/index.ts";
 import { type EffectiveConfig, loadEffectiveConfig } from "../config/index.ts";
-import { realOrResolvedSync, repoHash } from "../shared/index.ts";
+import { repoHash } from "../shared/index.ts";
 import {
   assertSafeMounts,
   assertWithinHostRoot,
@@ -23,16 +23,12 @@ export interface LaunchContext {
 type ContextMode = "sandbox" | "host";
 
 interface ContextOptions {
-  overlays?: boolean;
   rootOptional?: boolean;
 }
 
 type Opened<M extends ContextMode> = M extends "host"
   ? { context: LaunchContext }
   : { context: LaunchContext; backend: Backend };
-
-const isHomeOrRoot = (deps: CliDeps, folder: string) =>
-  folder === "/" || folder === realOrResolvedSync(deps.home);
 
 const assertWithinRoot = (
   deps: CliDeps,
@@ -74,10 +70,7 @@ const discoverContext = async (deps: CliDeps, lenient: boolean, options: Context
     );
   }
 
-  const overlays = lenient
-    ? options.overlays === true && !isHomeOrRoot(deps, mounted)
-    : effective.config.mounts.autoOverlays;
-  const workspace = await discoverWorkspace(folder, { overlays });
+  const workspace = await discoverWorkspace(folder);
 
   return {
     workspace,

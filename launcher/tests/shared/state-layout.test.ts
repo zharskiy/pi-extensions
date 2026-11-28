@@ -81,7 +81,6 @@ describe("stateLayout", () => {
       directory: "/state/repos/r1",
       record: "/state/repos/r1/repo.json",
       prepareLock: "/state/locks/prepare-r1.lock",
-      created: "/state/repos/r1/created.json",
     });
   });
 

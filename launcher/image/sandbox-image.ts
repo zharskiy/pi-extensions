@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import type { Backend } from "../backend/index.ts";
+import { type Backend, pinnedImageOf } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import { stateLayout, withFileLock, withFileLockIfFree } from "../shared/index.ts";
 import { type BuiltImage, ensureBuiltImage, type ImageVersions, pullPinnedImage } from "./build.ts";
@@ -28,11 +28,15 @@ export interface SandboxImage {
 const BUILD_LOCK_TIMEOUT_MS = 60 * 60 * 1000;
 
 const baseImage = async (input: SandboxImageInput, trustPem: string | undefined): Promise<BuiltImage> => {
-  const { reference, digest } = input.config.image;
+  const { reference } = input.config.image;
 
-  return reference !== undefined && digest !== undefined
-    ? pullPinnedImage(input, reference, digest)
-    : ensureBuiltImage({ ...input, versions: await input.versions(), trustPem });
+  if (reference === undefined) {
+    return ensureBuiltImage({ ...input, versions: await input.versions(), trustPem });
+  }
+
+  const pinned = pinnedImageOf(reference);
+
+  return pullPinnedImage(input, pinned.name, pinned.digest);
 };
 
 const announcedOnce = (preparing: (() => void) | undefined) => {

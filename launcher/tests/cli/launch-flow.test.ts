@@ -8,11 +8,10 @@ import type { Backend, MountSpec, VmPath, VmTarget } from "../../backend/index.t
 import { onClosedOutput } from "../../cli/deps.ts";
 import { CLEANUP_WAITING, GROUND_WAITING, withGroundLock } from "../../cli/ground.ts";
 import { run, runPinata } from "../../cli/index.ts";
-import { hostPathNotices, launchNotices } from "../../cli/launch-notices.ts";
+import { hostPathNotices } from "../../cli/launch-notices.ts";
 import { liveLaunches } from "../../grants/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { hostSessionsDir } from "../../workspace/index.ts";
-import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, piSessions, renderDirOf } from "./harness.ts";
 
@@ -521,7 +520,7 @@ describe("pi arguments that name host files", () => {
 
     const mounts: MountSpec[] = [
       { source: repo, target: repo, readOnly: false, kind: "bind" },
-      { source: "pinata-overlay", target: join(repo, "target"), readOnly: false, kind: "volume" },
+      { source: "pinata-volume", target: join(repo, "target"), readOnly: false, kind: "volume" },
     ];
     const notices = await hostPathNotices(
       [
@@ -545,40 +544,5 @@ describe("pi arguments that name host files", () => {
       `@target/built.md: ${join(repo, "target", "built.md")} lies outside the folders mounted in the sandbox, so pi inside cannot read it`,
       `-e ../notes: ${outside} lies outside the folders mounted in the sandbox, so pi inside cannot read it`,
     ]);
-  });
-});
-
-describe("the overlay notices", () => {
-  it("says the overlays are off when the walk was cut short", () => {
-    const notices = launchNotices({
-      workspace: { cwd: "/work", repoRoot: "/work", isGitRepo: true, overlays: [], overlaysTruncated: true },
-      effective: { config: sandboxConfig(), sources: {} },
-      stateDir: "/state",
-      repoHash: "r",
-      mountedRoot: "/work",
-    });
-
-    expect(notices).toEqual([
-      "pinata: the folder is too large to search for build output; overlays disabled, the host copies are used",
-    ]);
-  });
-
-  it("says once that a folder outside git gets no overlays, and nothing when overlays are off", () => {
-    const context = {
-      workspace: { cwd: "/work/notes", repoRoot: "/work/notes", isGitRepo: false, overlays: [] },
-      effective: { config: sandboxConfig(), sources: {} },
-      stateDir: "/state",
-      repoHash: "r",
-      mountedRoot: "/work",
-    };
-    const off = {
-      ...context,
-      effective: { ...context.effective, config: sandboxConfig({ mounts: { autoOverlays: false } }) },
-    };
-
-    expect(launchNotices(context)).toEqual([
-      "pinata: /work/notes is not in a git repository; build output is not overlaid, the host copies are used",
-    ]);
-    expect(launchNotices(off)).toEqual([]);
   });
 });

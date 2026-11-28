@@ -15,4 +15,10 @@ export const tagOf = (reference: string) => {
   return rest.startsWith("@") ? rest.slice(1) : (pinned ?? (tag || DEFAULT_TAG));
 };
 
+export const pinnedImageOf = (reference: string) => {
+  const at = reference.lastIndexOf("@");
+
+  return { name: reference.slice(0, at), digest: reference.slice(at + 1) };
+};
+
 export const pinnedReference = (reference: string, digest: string) => `${repositoryOf(reference)}@${digest}`;

@@ -15,14 +15,8 @@
       "properties": {
         "reference": {
           "type": "string",
-          "minLength": 1,
-          "pattern": "\\S",
-          "description": "A prebuilt image pulled by image.digest; set both or neither. Without them the image is built here."
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^sha256:[0-9a-f]{64}$",
-          "description": "The digest image.reference is pulled by; set both or neither."
+          "pattern": "^[^@\\s]+@sha256:[0-9a-f]{64}$",
+          "description": "A prebuilt image pulled by the digest it carries, name@sha256:<64 hex digits>; a tag before the @ is ignored. Without it the image is built here."
         },
         "packages": {
           "type": "array",
@@ -45,10 +39,6 @@
           "pattern": "^(/|~$|~/)",
           "description": "Absolute path (or ~/ path) of a file with Dockerfile lines, without FROM, appended to the image layer and run as root."
         }
-      },
-      "dependentRequired": {
-        "reference": ["digest"],
-        "digest": ["reference"]
       }
     },
     "credentials": {
@@ -431,7 +421,7 @@
               }
             ]
           },
-          "description": "Names that may resolve to private addresses, such as a private gateway host; never IP literals or loopback."
+          "description": "Reachable names that may resolve to private addresses, such as a private gateway host; an entry does not make a host reachable, and IP literals and loopback are never allowed."
         }
       }
     },
@@ -467,12 +457,17 @@
                     "type": "string",
                     "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
                     "description": "The volume's identity in place of the target, so entries of one name share a volume wherever they are mounted."
+                  },
+                  "source": {
+                    "type": "string",
+                    "pattern": "^(/|~$|~/)",
+                    "description": "A folder on the host, an absolute path or ~/, copied into the volume at the first launch that finds no copy there; refused where a bind source is refused. Files already in the volume stay, and a file at the same path is replaced."
                   }
                 }
               }
             ]
           },
-          "description": "Folders in the container kept in a named volume, one per sandbox VM, mounted read-write and owned by the sandbox user. A string is the volume at that target. No target listed twice (a trailing slash is dropped) or inside another, and no name listed twice."
+          "description": "Folders in the container kept in a named volume, one per pinata state folder and shared by every session of it, mounted read-write and owned by the sandbox user. A string is the volume at that target. No target listed twice (a trailing slash is dropped) or inside another, and no name listed twice."
         },
         "binds": {
           "type": "array",
@@ -494,10 +489,6 @@
             }
           },
           "description": "Host folders or files mounted read-only in the container. A source outside the folders the sandbox VM shares adds a read-only VM share, which restarts the VM once."
-        },
-        "autoOverlays": {
-          "type": "boolean",
-          "description": "Give every folder with a lockfile or build marker its own volume for the build output (node_modules for npm, pnpm, yarn and bun lockfiles, .venv for uv.lock, poetry.lock and Pipfile.lock, target for Cargo.lock, .gradle for settings.gradle and settings.gradle.kts) so the sandbox never shares it with the host. On by default."
         }
       }
     },
@@ -577,7 +568,7 @@
                 }
               }
             },
-            "description": "Named volumes, one per sandbox VM, mounted read-write and owned by the service's user; they keep their data until pinata restart."
+            "description": "Named volumes, one per pinata state folder, mounted read-write and owned by the service's user; they keep their data until pinata restart."
           },
           "tmpfs": {
             "type": "array",

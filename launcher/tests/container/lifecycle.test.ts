@@ -1,19 +1,18 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
-import { mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { type ExecIo, type ExecSpec, roleOf } from "../../backend/index.ts";
 import {
-  type LaunchContainerInput,
   listLauncherContainers,
   ROOT_EXEC_ENV,
   removeLaunchContainer,
-  startLaunchContainer as startWith,
+  startLaunchContainer,
 } from "../../container/lifecycle.ts";
 import { buildContainerSpec, type ContainerSpecInput } from "../../container/spec.ts";
-import { GUEST_PATHS, LauncherError, readCreatedDirs, sha256Hex } from "../../shared/index.ts";
+import { GUEST_PATHS, LauncherError } from "../../shared/index.ts";
 import { createFakeBackend, FAKE_INSTALL } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
@@ -40,8 +39,6 @@ afterAll(() => {
 
 const READY_MARKER = GUEST_PATHS.ready;
 
-const REPO_HASH = sha256Hex(`${WORK}/repo`);
-
 const launches = { count: 0 };
 
 const nextLaunchId = () => {
@@ -49,9 +46,6 @@ const nextLaunchId = () => {
 
   return launches.count.toString(16).padStart(16, "0");
 };
-
-const startLaunchContainer = (input: Omit<LaunchContainerInput, "stateDir">) =>
-  startWith({ stateDir: LOCK_STATE, ...input });
 
 const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
   buildContainerSpec({
@@ -73,13 +67,12 @@ const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
     ...overrides,
   });
 
-const overlaid = (...paths: string[]) =>
-  specOf({ workspace: { ...workspace, overlays: paths.map((path) => join(WORK, "repo", path)) } });
+const withVolumes = (...volumes: string[]) => specOf({ config: sandboxConfig({ mounts: { volumes } }) });
 
 describe("startLaunchContainer", () => {
   it("creates and starts the launch's container with its volumes", async () => {
     const fake = createFakeBackend();
-    const spec = overlaid("node_modules");
+    const spec = withVolumes("~/.npm");
     const result = await startLaunchContainer({ backend: fake.backend, spec });
 
     expect(fake.containers.get(result.id)?.summary.state).toBe("running");
@@ -95,8 +88,8 @@ describe("startLaunchContainer", () => {
   it("gives two launches of one repository their own containers on the same volumes", async () => {
     const fake = createFakeBackend();
     const [one, two] = await Promise.all([
-      startLaunchContainer({ backend: fake.backend, spec: overlaid("node_modules") }),
-      startLaunchContainer({ backend: fake.backend, spec: overlaid("node_modules") }),
+      startLaunchContainer({ backend: fake.backend, spec: withVolumes("~/.npm") }),
+      startLaunchContainer({ backend: fake.backend, spec: withVolumes("~/.npm") }),
     ]);
     const volumesOf = (id: string) =>
       fake.containers
@@ -123,6 +116,14 @@ describe("startLaunchContainer", () => {
     expect(fake.containers.get(first.id)?.summary.state).toBe("running");
     expect(fake.containers.get(second.id)?.spec?.image).toBe("sha256:image-two");
     expect(fake.stops).toEqual([]);
+  });
+
+  it("creates no folder in the repository on the host", async () => {
+    const fake = createFakeBackend();
+
+    await startLaunchContainer({ backend: fake.backend, spec: withVolumes("~/.npm", "/opt/data") });
+
+    expect(await readdir(workspace.repoRoot)).toEqual([]);
   });
 
   it("creates the container from the spec it is given", async () => {
@@ -195,12 +196,8 @@ describe("container housekeeping", () => {
 });
 
 describe("volumes the sandbox writes", () => {
-  const project = join(WORK, "repo", "web");
-  const nodeWorkspace = { ...workspace, overlays: [join(project, "node_modules")] };
-  const cachedSpec = (stateDir = LOCK_STATE) =>
+  const cachedSpec = () =>
     specOf({
-      workspace: nodeWorkspace,
-      stateDir,
       config: sandboxConfig({
         mounts: { volumes: ["~/.cache/pip", { target: "/opt/data" }] },
       }),
@@ -236,85 +233,6 @@ describe("volumes the sandbox writes", () => {
     fake.execs
       .filter((exec) => exec.spec.command[2]?.startsWith("/bin/chown ") === true)
       .map((exec) => exec.spec);
-
-  beforeEach(async () => {
-    await rm(project, { recursive: true, force: true });
-
-    await mkdir(project, { recursive: true });
-  });
-
-  it("creates a missing mount point on the host before the container starts and records it", async () => {
-    const fake = createFakeBackend();
-
-    await startLaunchContainer({ backend: fake.backend, spec: cachedSpec() });
-
-    expect((await stat(join(project, "node_modules"))).isDirectory()).toBe(true);
-    expect(await readCreatedDirs(LOCK_STATE, REPO_HASH)).toContain(join(project, "node_modules"));
-  });
-
-  it("removes overlay volumes of this repository that no container mounts any more", async () => {
-    const fake = createFakeBackend();
-
-    await fake.backend.ensureVolume("pinata-cache-stale", {
-      "pinata.repo-hash": REPO_HASH,
-      "pinata.cache-path": "gone/node_modules",
-    });
-
-    await fake.backend.ensureVolume("pinata-cache-foreign", {
-      "pinata.repo-hash": "f".repeat(64),
-      "pinata.cache-path": "gone/node_modules",
-    });
-
-    await startLaunchContainer({ backend: fake.backend, spec: cachedSpec() });
-
-    expect(fake.volumes.has("pinata-cache-stale")).toBe(false);
-    expect(fake.volumes.has("pinata-cache-foreign")).toBe(true);
-  });
-
-  it("refuses a mount point the sandbox side turned into a link", async () => {
-    const fake = createFakeBackend();
-    const elsewhere = join(WORK, "elsewhere");
-
-    await mkdir(elsewhere, { recursive: true });
-
-    await symlink(elsewhere, join(project, "node_modules"));
-
-    await expect(startLaunchContainer({ backend: fake.backend, spec: cachedSpec() })).rejects.toThrow(
-      `the mount point ${join(project, "node_modules")} is a symbolic link`,
-    );
-    expect([...fake.containers.values()]).toEqual([]);
-  });
-
-  it("refuses a mount point whose existing parent leads outside the repository through a link", async () => {
-    const fake = createFakeBackend();
-    const outside = join(WORK, "outside");
-    const link = join(WORK, "repo", "sym");
-
-    await rm(link, { force: true });
-
-    await mkdir(join(outside, "x"), { recursive: true });
-
-    await symlink(outside, link);
-
-    const spec = overlaid("sym/x/y");
-
-    await expect(startLaunchContainer({ backend: fake.backend, spec })).rejects.toThrow(
-      `the mount point ${join(link, "x")} leads outside ${workspace.repoRoot}`,
-    );
-    expect(await stat(join(outside, "x", "y")).catch(() => undefined)).toBeUndefined();
-    expect([...fake.containers.values()]).toEqual([]);
-
-    await rm(link, { force: true });
-  });
-
-  it("creates every missing directory of a nested mount point inside the repository", async () => {
-    const fake = createFakeBackend();
-    const spec = overlaid("deep/a/b");
-
-    await startLaunchContainer({ backend: fake.backend, spec });
-
-    expect((await stat(join(WORK, "repo", "deep", "a", "b"))).isDirectory()).toBe(true);
-  });
 
   it("runs every root exec through /bin/sh and calls its programs by absolute path", async () => {
     const fake = createFakeBackend();
@@ -363,7 +281,6 @@ describe("volumes the sandbox writes", () => {
       '/bin/chown -h 1000:1000 "$@" && : > /tmp/pinata-handover',
       "sh",
       "/home/pi/.cache",
-      join(project, "node_modules"),
       "/home/pi/.cache/pip",
       "/opt/data",
     ]);
@@ -381,7 +298,7 @@ describe("volumes the sandbox writes", () => {
     const fake = createFakeBackend({ exec: answering("chown", { code: 1, stderr: "denied\n" }) });
 
     await expect(
-      startLaunchContainer({ backend: fake.backend, spec: specOf({ workspace: nodeWorkspace }) }),
+      startLaunchContainer({ backend: fake.backend, spec: withVolumes("/opt/data") }),
     ).rejects.toMatchObject({
       message: expect.stringContaining("the sandbox could not hand its volumes to the sandbox user: denied"),
     });
@@ -391,7 +308,7 @@ describe("volumes the sandbox writes", () => {
     const fake = createFakeBackend({ exec: answering("chown", { error: "engine: exec refused" }) });
 
     await expect(
-      startLaunchContainer({ backend: fake.backend, spec: specOf({ workspace: nodeWorkspace }) }),
+      startLaunchContainer({ backend: fake.backend, spec: withVolumes("/opt/data") }),
     ).rejects.toThrow("engine: exec refused");
   });
 
@@ -425,7 +342,7 @@ describe("volumes the sandbox writes", () => {
       hint: "the share hint",
     });
     expect(await failing(true)).toMatchObject({
-      hint: "the share hint; the image is pinned by image.digest and may predate this pinata version",
+      hint: "the share hint; the image is pinned by image.reference and may predate this pinata version",
     });
   });
 
@@ -442,7 +359,7 @@ describe("volumes the sandbox writes", () => {
 
   it("tells the entrypoint to wait for the handover whenever the sandbox owns a volume", () => {
     expect(cachedSpec().env.PINATA_AWAIT_HANDOVER).toBe("1");
-    expect(specOf({ workspace: nodeWorkspace }).env.PINATA_AWAIT_HANDOVER).toBe("1");
+    expect(withVolumes("/opt/data").env.PINATA_AWAIT_HANDOVER).toBe("1");
     expect(specOf().env.PINATA_AWAIT_HANDOVER).toBeUndefined();
   });
 
@@ -457,7 +374,7 @@ describe("volumes the sandbox writes", () => {
     expect(chownsOf(fake)).toEqual([]);
   });
 
-  it("labels overlay volumes with the repository and configured volumes with the install only", async () => {
+  it("labels configured volumes with the install only", async () => {
     const fake = createFakeBackend();
     const spec = cachedSpec();
 
@@ -466,13 +383,6 @@ describe("volumes the sandbox writes", () => {
     const labelsOf = (target: string) =>
       fake.volumeLabels.get(spec.mounts.find((mount) => mount.target === target)?.source ?? "");
 
-    expect(labelsOf(join(project, "node_modules"))).toEqual({
-      "pinata.managed": "true",
-      "pinata.install": FAKE_INSTALL,
-      "pinata.repo-hash": sha256Hex(workspace.repoRoot),
-      "pinata.repo-root": workspace.repoRoot,
-      "pinata.cache-path": "web/node_modules",
-    });
     expect(labelsOf("/home/pi/.cache/pip")).toEqual({
       "pinata.managed": "true",
       "pinata.install": FAKE_INSTALL,

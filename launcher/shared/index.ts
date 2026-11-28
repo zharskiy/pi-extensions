@@ -72,13 +72,9 @@ export { lstatOrUndefined, readRegularFile, sameEntry } from "./regular-file.ts"
 export type { RepoRecord } from "./repo-state.ts";
 export {
   forgetRepo,
-  hasRepoLeftovers,
   isMounted,
   knownRepos,
-  readCreatedDirs,
-  recordCreatedDirs,
   repoRecordOf,
-  writeCreatedDirs,
   writeRepoRecord,
 } from "./repo-state.ts";
 export { hasUrlUserinfo, isAuthLikeHeader, isSecretName, isSecretShapedValue } from "./secret-name.ts";

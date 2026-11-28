@@ -42,7 +42,6 @@ interface EgressConfig {
 
 interface ImageConfig {
   reference?: string;
-  digest?: string;
   packages?: string[];
   npmGlobal?: string[];
   dockerfile?: string;
@@ -58,6 +57,7 @@ interface VmConfig {
 export interface VolumeEntry {
   target: string;
   name?: string;
+  source?: string;
 }
 
 interface BindEntry {
@@ -68,7 +68,6 @@ interface BindEntry {
 interface MountsConfig {
   volumes: Array<string | VolumeEntry>;
   binds: BindEntry[];
-  autoOverlays: boolean;
 }
 
 interface ResourcesConfig {

@@ -14,18 +14,18 @@ const COMMANDS: Array<[string, string]> = [
   ["pi config", "the user resource config, with host pi on the host (-l passes through into the sandbox)"],
   [
     "pinata install [--yes]",
-    "set up pinata's package in host pi, the pi link, PATH and the sandbox VM; needs pi installed on the host, --yes asks nothing",
+    "set up pinata's package in host pi, the pi link, PATH, the git settings and the sandbox VM; needs pi installed on the host, --yes asks nothing",
   ],
   ["pinata update", "install the latest pinata with npm, then its pinata install --yes"],
   [
     "pinata uninstall [--sandbox]",
-    "remove the sandbox VM, pinata's state, its links, its PATH block and its package in host pi; your config, sessions, pi and colima stay; --sandbox removes only the sandbox VM, the pi link and pinata's state, so pi runs host pi",
+    "remove the sandbox VM, pinata's state, its links, its shell and git config blocks and its package in host pi; your config, sessions, pi and colima stay; --sandbox removes only the sandbox VM, the pi link and pinata's state, so pi runs host pi",
   ],
   [
     "pinata init [--yes]",
     "set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
   ],
-  ["pinata status", "runtime, services, container, proxy, image, launches, grants, overlays, volumes"],
+  ["pinata status", "runtime, services, container, proxy, image, launches, grants, volumes"],
   ["pinata list", "the sandbox VM and the pi sessions it runs, for every folder, without starting it"],
   ["pinata config", "the effective config and whether each key comes from the config file or the default"],
   ["pinata egress allow <host[:port]>", "allow a host for every session until revoked"],

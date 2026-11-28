@@ -46,7 +46,7 @@ Connections that are already open stay until they close.
 The file applies to every pi you start in the sandbox, in every folder. There are no profiles, no per-project config, and no project file that adds to it. So:
 
 - `setup` and `services` run in every repository pi starts in. Write each `setup` command so it does nothing, quickly, in a repository it does not apply to, for example by testing for a file first; every session waits for the services' `ready`.
-- A volume in `mounts.volumes` is one volume shared by every repository. Nothing in it stays apart per repository.
+- A volume in `mounts.volumes` is one volume shared by every repository ([Volumes](#volumes)).
 - `egress`, `credentials`, `tls`, `env`, `resources`, `mounts.binds`, the image and your grants are the same in every folder.
 
 ## All keys
@@ -55,17 +55,16 @@ The file applies to every pi you start in the sandbox, in every folder. There ar
 | --- | --- | --- |
 | `egress.allow` | The hosts the sandbox may reach, besides `pi.dev` and your credential hosts. | `[]` |
 | `egress.deny` | Hosts that are never reachable. | `[]` |
-| `egress.privateHosts` | Names that may resolve to private addresses. | `[]` |
+| `egress.privateHosts` | Hosts that are already reachable (through `egress.allow`, a credential rule, a derived rule or a grant) and may resolve to private or loopback addresses. An entry here does not make a host reachable. | `[]` |
 | `image.packages` | Debian packages to add to the image. | none |
 | `image.npmGlobal` | npm packages to install globally, as `name@version`. | none |
 | `image.dockerfile` | A file of Dockerfile lines to add to the image. | none |
-| `image.reference` and `image.digest` | A prebuilt image to pull instead of building one. | none |
-| `credentials.derive.enabled` | Whether credentials are read from your host files. | `true` |
+| `image.reference` | A prebuilt image to pull by its digest instead of building one. | none |
+| `credentials.derive.enabled` | Whether credentials are read from your host files. `false` derives no credential rules and reads no glab, npm, pip or Maven files, but the git identity is still derived. | `true` |
 | `credentials.derive.hosts` | Read credentials only for these hosts. | every host |
 | `credentials.rules` | Credentials you define by hand. | `[]` |
 | `tls.extraCa` | Extra CA certificates to trust. | `[]` |
-| `mounts.autoOverlays` | Give build output folders their own volume. | `true` |
-| `mounts.volumes` | Folders kept in volumes shared by all your sandboxes ([below](#volumes)). | `[]` |
+| `mounts.volumes` | Folders kept in volumes shared by all your sandboxes, each optionally filled once from a folder of your Mac ([below](#volumes)). | `[]` |
 | `mounts.binds` | Host files or folders mounted read-only inside ([below](#read-only-binds)). | `[]` |
 | `setup` | Commands run in the sandbox at every launch, before pi starts ([below](#setup-commands)). | `[]` |
 | `services` | Long-running processes started before pi, reachable on `localhost` on the ports they declare and shared by every session that uses the same pinata state folder ([below](#services)). | `[]` |
@@ -124,7 +123,19 @@ An `egress.deny` entry reaches further:
 - `*.example.com` denies every name under `example.com`, but not `example.com` itself.
 - An entry without a port denies every port.
 
-The proxy refuses a name that resolves only to private, loopback, link-local or reserved addresses. If an internal host needs that, list it in `egress.privateHosts`. Entries are names or `*.domain`, without a port.
+The proxy refuses a reachable name that resolves only to private, loopback, link-local or reserved addresses. This protects your Mac's local services and your network from a name whose DNS answer someone else controls, such as a host under an allowed wildcard. `egress.privateHosts` lists the reachable names that may resolve to such addresses. An entry there makes nothing reachable. Entries are names or `*.domain` (one label), without a port.
+
+An internal host you reach directly is in both lists:
+
+```json
+{ "egress": { "allow": ["packages.example.internal"], "privateHosts": ["packages.example.internal"] } }
+```
+
+An internal host with a credential rule is reachable through the rule, so it needs only `privateHosts`:
+
+```json
+{ "egress": { "privateHosts": ["gateway.example.internal"] } }
+```
 
 ### Grants
 
@@ -177,28 +188,15 @@ These keys add one layer on top of that image:
 
 The layer is rebuilt only when these inputs change.
 
-`image.reference` and `image.digest` go together. With both set, pinata pulls that image by its digest (`sha256:` and 64 hex digits) instead of building its own. The registry must allow anonymous pulls. The layer above still builds on top.
+`image.reference` names a prebuilt image with its digest, `name@sha256:<64 hex digits>` (`registry.example.internal/pinata:1@sha256:…`), and pinata pulls that image by the digest instead of building its own. A tag before the `@` is allowed and ignored: the pull goes by the digest. A reference without `@sha256:` is a config error. The registry must allow anonymous pulls. The layer above still builds on top.
 
 The base image build reaches the network straight from the VM, outside the allow-list, through your [parent proxy](#parent-proxy) when one is set. So does the layer when `image.packages`, `image.npmGlobal` or `image.dockerfile` is set; without them it builds with no network. Pinata starts these builds, not the agent.
 
 ## Build output and caches
 
-### Build output overlays
+### Build output
 
-With `mounts.autoOverlays` on, these folders get a volume of their own when a matching file sits in the same folder:
-
-| lockfile in the same folder | folder |
-| --- | --- |
-| `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb` | `node_modules` |
-| `uv.lock`, `poetry.lock`, `Pipfile.lock` | `.venv` |
-| `Cargo.lock` | `target` |
-| `settings.gradle`, `settings.gradle.kts` | `.gradle` |
-
-This keeps Linux builds apart from your Mac's. Inside, the host copy is hidden, so run your install command once there. Maven `target/` and Gradle `build/` are not overlaid and stay on your Mac's folder: their builds remove and recreate them, and a build tool that deletes its output folder fails on a volume mounted there (`mvn clean`, for example, fails with `EBUSY`). A build that writes very many files there is safe through the [file cache release](#file-cache).
-
-If there are more than 512 such folders, nothing is overlaid and a notice says so. Only the repository pi starts in is searched, never the other projects in the workspace root. A repository too large to search (over 50,000 directories) gets no overlays and a notice, and so does a folder outside git: `pinata: <folder> is not in a git repository; build output is not overlaid, the host copies are used`. Set `mounts.autoOverlays` to `false` to use your Mac's copies.
-
-If an overlay folder is missing, pinata creates it empty on your Mac. It removes it again, if still empty, after the folder's last session. `pinata restart` removes the overlay volumes.
+`node_modules`, `.venv`, `target`, `.gradle` and every other build output folder are ordinary folders in the shared tree: the sandbox reads and writes the copy on your Mac. What an install or a build inside makes is built for Linux, so native modules and binaries from inside may not run on your Mac, nor yours inside. A build that writes very many files there is safe through the [file cache release](#file-cache).
 
 ### Volumes
 
@@ -210,23 +208,38 @@ Your home inside the sandbox lives in memory, so tool caches are lost when pi ex
     "volumes": [
       "~/.npm",
       "~/.cache/pip",
-      { "target": "~/.m2/repository", "name": "maven" }
+      { "target": "~/.m2/repository", "name": "maven", "source": "~/.m2/repository" }
     ]
   }
 }
 ```
 
-- An entry is a target, or an object with `target` and optional `name`.
+- An entry is a target, or an object with `target`, optional `name` and optional `source`.
 - A target is an absolute path or starts with `~/`, which is the sandbox home `/home/pi`. Write a path in the home with `~/`, not `/home/pi/`.
 - Every entry is a user volume: one volume that every sandbox of yours mounts, whatever the folder. No entry is kept apart per repository.
 - The volume is known by its `name` when set, otherwise by the target as written. Without a `name`, changing the target starts a new, empty volume. A `name` is lowercase letters, digits, `.`, `-` and `_`, and two entries may not share it. An entry whose `name` is the name of a [service volume](#services) mounts that same volume.
-- Your Mac's folder of that name is never mounted. The volume starts empty.
+- Your Mac's folder of that name is never mounted. The volume starts empty, unless the entry has a `source`: a folder of your Mac, an absolute path or one starting with `~/`, that pinata copies into the volume once ([below](#copy-a-folder-into-a-volume)).
 - An entry may share a folder with a file pinata puts in your home, such as `~/.m2/repository` beside the rendered `~/.m2/settings.xml`. The sandbox waits until each volume, and the home folders above it, belong to the sandbox user before it writes there, and a launch whose hand-over fails stops.
 - The [target rules](#mount-targets) apply.
 
 Every sandbox can write to a user volume, so a bad package written in one folder reaches the others. Use user volumes for package caches only.
 
 A user volume stays until `pinata restart` or the uninstall, which delete it with the VM; the daily cleanup never removes it.
+
+#### Copy a folder into a volume
+
+An entry with a `source` gets a copy of that folder of your Mac, made once:
+
+- The source is checked when pi starts, with the rules of a [bind source](#read-only-binds): not your home or a folder above it, nothing the sandbox protects, not pinata's or pi's folders, and nothing that overlaps the workspace root or pi's session folder. A refused source stops the launch with an error that names `mounts.volumes[<n>].source`.
+- At launch, after the container is up and its volumes belong to the sandbox user, and before `setup` and pi, pinata looks for the file `.pinata-seeded` at the top of the volume (a link at that name does not count). When it is missing, pinata prints `pinata: copying <source> into the volume at <target>, one time`, copies the folder, writes `.pinata-seeded` last, holding the source's real path, and prints `pinata: copied <source> into the volume at <target>`. When the marker names another folder, as after you change `source`, pinata copies nothing and prints `pinata: warning: the volume at <target> holds a copy of <other folder>, so <source> is not copied into it; delete <target>/.pinata-seeded in the sandbox to copy it`.
+- Pinata writes the archive itself and streams it into `tar` in the sandbox, which writes as the sandbox user. Files are owned by `1000:1000` and keep their permission bits and modification times; setuid, setgid and sticky bits are dropped, and every folder gets read, write and search for its owner. Links are copied as links and never followed. Sockets, fifos, devices, macOS `._*` files, extended attributes, ACLs and file flags are left out. Hard links arrive as separate files.
+- The copy reads only inside the source's real path. Pinata resolves the source again before the copy; when it now leads to another folder, nothing is copied and the warning below names both paths. Every file is opened so that a link anywhere in its path makes the open fail, and a folder that turns into a link during the copy is left out, so nothing outside the source is read.
+- An entry that cannot be read (no permission, gone since the folder was listed, or turned into a link) is left out and the copy goes on; the closing line then ends with `; <n> entries could not be read and were left out`. A file that changes size while it is read is cut or padded with zeros to the size it had when it was opened, and the line ends with `; <n> files changed while they were read`. The marker is written all the same.
+- Files already in the volume stay. A file, folder or link at the same path as one in the source is replaced; a link there is removed, not written through. Nothing else is deleted.
+- Two launches never copy into one volume at once: the second waits, prints `pinata: waiting for another pi session to finish copying into <target>`, then finds the marker and copies nothing.
+- A copy that fails never stops the launch: a source that is missing, not a folder or resolving elsewhere, `tar` in the sandbox exiting non-zero, an archive that did not reach its end, a marker that could not be written, or a copy interrupted part-way prints `pinata: warning: <source> was not copied into the volume at <target> (<reason>); the next launch tries again`, writes no marker, and pi starts.
+- On your Mac the copy writes only its lock file, `locks/seed-<hash>.lock` under pinata's state folder; nothing flows back from the volume. Later changes to the source do not reach the volume. Delete `.pinata-seeded` (a plain file) inside the sandbox to copy again at the next launch.
+- `pinata doctor` and services never copy.
 
 ### Read-only binds
 
@@ -259,7 +272,7 @@ Every target of `mounts.volumes` and `mounts.binds` follows these rules, checked
 | `~/.pi`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.colima`, `~/.kube`, `~/.config`, `~/.local/bin` and anything inside them | no |
 | a path with an empty, `.` or `..` part | no |
 | a target listed twice, or one inside another target | no |
-| a target inside, or above, the folder you start pi in, its git dirs, a build output overlay or pi's session folder | no, the launch stops with a `mounts:` error |
+| a target inside, or above, the folder you start pi in, its git dirs or pi's session folder | no, the launch stops with a `mounts:` error |
 
 The rules read a target as text, after normalisation; pinata does not resolve it inside the image. A symbolic link in the image at or above a target leads the mount to where the link points, which can be a reserved tree: Debian's own `/etc/localtime` and the entries of `/etc/alternatives`, for example, point into `/usr`. Only your config names targets and only the image, which your `image.dockerfile` lines or your pinned image change, holds such links, so this stays within what you already control. Pick targets that are plain folders in the image.
 
@@ -322,7 +335,7 @@ Some things to know:
 | `ready.timeoutSeconds` | How long to wait for `ready.command`, 1 to 3600. | `60` |
 | `memoryGiB`, `shmMiB` | The memory limit and the `/dev/shm` size of the service. | the engine's default |
 
-Paths are absolute, normalised, not `/`, not inside each other and without `:` or `,`, which the container engine reads as separators. The agent's reserved paths do not apply. Two services that mount one volume must run as the same user, and a volume the agent shares through `mounts.volumes` (below) only with services that run as `1000:1000`.
+Paths are absolute, normalised, not `/`, not inside each other and without `:` or `,`, which the container engine reads as separators. The agent's reserved paths do not apply. Two services that mount one volume must run as the same user.
 
 How it works:
 
@@ -339,7 +352,7 @@ How it works:
 
 Some things to know:
 
-- Services start with the first session, so a slow `ready` delays that `pi`. A later session waits only for a service that had exited and starts again.
+- Services start with the first session, so a slow `ready` delays that `pi`.
 - Every session reaches the same services and the same data, in any folder. Two repositories that need different data in one database need different database names or users.
 - A service volume is one volume per pinata state folder, like a `mounts.volumes` entry. Its name is the `name` you give it.
 - The agent sees a service volume only through a `mounts.volumes` entry with the same `name`. Such a volume is shared: every service that mounts it must run as `1000:1000`, the sandbox user's ids, and the config is refused otherwise. The agent owns its files and can write, replace or delete anything the service keeps there.
@@ -382,6 +395,8 @@ Your Mac's process behind the VM keeps one open file for each file the VM has ca
 It skips a check while another launch is changing the VM, and does nothing when it cannot find the VM's process. It finds that process as the holder of the VM's disk file, `disk`, or `diffdisk`, as Lima older than 2.1 names it, or its data disk. When several processes hold them, it watches the one with the most open files and looks again every 5 minutes. When looking again times out, it keeps watching the process it found before while that process runs. When pi exits during a release, pinata waits for the release to finish. Set `vm.releaseFileCache` to `false` to turn it off.
 
 The `file cache` line of `pinata doctor`, there also when the sandbox does not start, prints by default when it warns or skips for a reason it names (the VM is not running, or likely stopped), not when it is ok or skipped off macOS or on a backend that does not count; `pinata doctor --verbose` always prints it. It shows the count and the limit, and warns when the count is past it, when the release cannot find the VM's process, when looking for it timed out or could not run, or when it cannot read the limit. With `vm.releaseFileCache` off, it warns only when the count is past the limit. It only reads; it never drops the cache. `resources.openFiles` does not change any of this: it limits each process inside the container, not your Mac's process behind the VM.
+
+`pinata install` raises `kern.maxfiles` to at least 1048576 and keeps it there at boot ([Install](README.md#install)); `pinata doctor` says to run it when the value is lower, and so does `pi`, once for each low value. That fixes the system-wide table: with the default (122880 on many Macs) the VM's cached files and the files of your other apps can fill it together, and then a file fails to open anywhere on the Mac. It does not raise `kern.maxfilesperproc`, and pinata never does: macOS frees the VM process's files when it holds about nine tenths of that limit, so a higher limit lets the cache grow further before the drop, and the per-process ceiling the VM hits stays where it is. A single build that opens more files than that per-process limit still fails; the release above keeps the count under it between such peaks.
 
 ## Settings written back
 
@@ -477,6 +492,28 @@ A name in both `env.allow` and `env.set` takes the `env.set` value; your shell's
 
 Your `env.set` replaces the default, which sets nothing, as a whole map; `pinata config` shows its source as `config`, or `default` without it.
 
+`GIT_OPTIONAL_LOCKS=0` is a default of pinata's, not a fixed value: it is not refused, and an `env.set` value for it replaces pinata's, as does a host value `env.allow` forwards (see [Git settings](#git-settings)).
+
+## Git settings
+
+Git on your Mac and git in the sandbox work on the same `.git` folder. A plain `git status` rewrites `.git/index` when it finds changed file times, and the other side's next write can then fail on `index.lock`. Pinata sets three things on both sides so that a status only reads:
+
+| Setting | On the Mac | In the sandbox |
+|---|---|---|
+| `GIT_OPTIONAL_LOCKS=0` | exported in pinata's block in your shell profile | the container environment, unless `env.set` names it |
+| `core.checkStat=minimal` | your global git config, through pinata's file | the rendered `~/.gitconfig` |
+| `core.trustctime=false` | your global git config, through pinata's file | the rendered `~/.gitconfig` |
+
+On the Mac, `pinata install` (and so `pinata update`) writes them and `pinata uninstall` removes them; `pinata uninstall --sandbox` keeps them. Everything pinata writes lies between a `# pinata begin` and a `# pinata end` line, and the uninstall removes only that.
+
+- The shell profile: the export is the second line of the block that puts `~/.local/bin` on `PATH`, in `~/.zshrc` and in `~/.bashrc` and `~/.bash_profile` when they exist. The block sits at the end of the file, so it overrides a `GIT_OPTIONAL_LOCKS` you export earlier in the file; one you export after the block wins. Only git started from a terminal sees it.
+- The global git config: a block at the start of the file with `[includeIf "gitdir:/"]` and `path = "<package>/launcher/cli/pinata/gitconfig"`, a file in the installed package that holds the two `core` keys. `gitdir:/` matches every repository, worktree and bare repository; outside a repository the keys do not apply, and they matter only with an index. Git takes the last value it reads, so a value you set yourself for either key, before or after the install, wins. The keys reach every git on the Mac, apps started from the Dock included. When the package is removed, git ignores the missing file without an error.
+- The file is `GIT_CONFIG_GLOBAL` when it is set and not empty, else `$XDG_CONFIG_HOME/git/config` (`~/.config/git/config` when `XDG_CONFIG_HOME` is unset or empty) when that exists, else `~/.gitconfig`, created when missing. Git reads the XDG file before `~/.gitconfig`, so the block comes before every global value of yours, in either file, and `git config --global`, which writes `~/.gitconfig` when both exist, sets a value that wins. A block an earlier install left in another of these files is removed, so there is one. One that is not a regular file, such as `GIT_CONFIG_GLOBAL=/dev/null`, is left alone with a line saying so. The uninstall cuts the block from each of `GIT_CONFIG_GLOBAL`, the XDG file and `~/.gitconfig`; a block in a file that an earlier `GIT_CONFIG_GLOBAL` named stays, so cut it out by hand. A file that held only the block stays, empty.
+- A file whose markers do not pair or repeat is left as it is, with a line saying so, and gets no block. A marker line that ends in a carriage return counts, and a byte-order mark at the start of a file stays first.
+- A linked file is edited through the link, as `git config --global` does: the new text goes into a temporary file beside the link's target, with the target's mode, which then replaces the target, so the link stays. A link to a missing file is left alone, and a file pinata cannot write, such as one linked into a read-only folder, is left as it is; each gets a line saying so, and the install or uninstall goes on.
+
+In the sandbox, the rendered `~/.gitconfig` starts with the two `core` keys, before the identity and the glab hosts, and is written at every launch. It is git's global scope, so a repository's own `.git/config` value for either key outranks it, as do `GIT_CONFIG_COUNT` entries you set in `env.set` and `setup` lines that set the keys again.
+
 ## Credentials
 
 ### Derived credentials
@@ -496,7 +533,7 @@ A registry, mirror or index without a credential and without an `egress.allow` e
 
 A derived glab token reaches everything it can on its host and its API host.
 
-To narrow what is derived, list the hosts you want in `credentials.derive.hosts`. `*.domain` entries work. Set `credentials.derive.enabled` to `false` to derive nothing.
+To narrow what is derived, list the hosts you want in `credentials.derive.hosts`. `*.domain` entries work. Set `credentials.derive.enabled` to `false` to stop deriving credentials; your git identity is still derived.
 
 Some credentials are not derived, for example uv's config and tokens that a project file reads from a variable. The list is in [known gaps](THREAT-MODEL.md#5-known-gaps).
 
@@ -649,11 +686,10 @@ A team shares the config by giving everyone the same file: copy it to `~/.pi/age
 - Adds a credential for the gateway, from a host command, and one for the registry, from a variable.
 - Leaves credential derivation on, so `glab`, npm, pip and Maven work as on the host.
 - Points npm at the internal registry with `env.set`, sets `CI`, and raises the memory, process and `/dev/shm` limits of the container.
-- Keeps the npm cache, a fixtures folder and the database's logs in volumes that every session shares.
-- Mounts a fixtures folder of your Mac read-only and copies it into its volume once, from `setup` (see [below](#seed-a-volume-from-a-read-only-bind)).
-- Runs a database service on port 5432, whose log volume the agent also mounts (see [below](#read-the-logs-of-a-service)).
+- Keeps the npm cache, a fixtures folder and the database's logs in volumes that every session shares, the fixtures volume filled once from a folder of your Mac ([Copy a folder into a volume](#copy-a-folder-into-a-volume)).
+- Runs a database service on port 5432, whose log volume the agent also mounts ([Read the logs of a service](#read-the-logs-of-a-service)).
 
-Replace the `*.example.internal` names with your own hosts and the service with your own, and add the package registries your team uses to `egress.allow`. The bind source must exist on every Mac that uses the file.
+Replace the `*.example.internal` names with your own hosts and the service with your own, and add the package registries your team uses to `egress.allow`. A Mac without the fixtures folder starts with an empty fixtures volume and a warning.
 
 `pi install`, `pi mcp …`, every `pi update` and `pi config` without `-l` run host pi on the host. They run before the config is read.
 
@@ -661,33 +697,19 @@ Replace the `*.example.internal` names with your own hosts and the service with 
 
 Each recipe is a part of the one config file; merge it with the keys you already have.
 
-### Seed a volume from a read-only bind
+### Seed a volume from a folder of your Mac
 
-A bind is read-only, and a volume starts empty. To get a writable copy of a folder of your Mac, bind it and copy it into a volume once:
+To start the sandbox's Maven repository from the one on your Mac, give its volume a `source`:
 
 ```json
 {
   "mounts": {
-    "binds": [{ "source": "~/reference/fixtures", "target": "/etc/fixtures" }],
-    "volumes": [{ "target": "/srv/fixtures" }]
-  },
-  "setup": [
-    ["sh", "-c", "test -e /srv/fixtures/.seeded || { cp -R /etc/fixtures/. /srv/fixtures/ && touch /srv/fixtures/.seeded; }"]
-  ]
+    "volumes": [{ "target": "~/.m2/repository", "name": "maven", "source": "~/.m2/repository" }]
+  }
 }
 ```
 
-The marker is written last, so a copy stopped half-way runs again at the next launch. Every session, in any folder, shares the one copy, so a change made in one folder shows in the others. Delete the marker inside the sandbox to copy again.
-
-### Shared package caches
-
-Package caches in user volumes outlive each session and are shared by all your sandboxes, so an install in one repository reuses what another one downloaded:
-
-```json
-{ "mounts": { "volumes": ["~/.npm", "~/.cache/pip"] } }
-```
-
-The volumes start empty and never use your Mac's folders. Every sandbox can write to them, so keep them to package caches. See [Volumes](#volumes).
+Name `~/.m2/repository`, not `~/.m2`, so `settings.xml` and its credentials stay on your Mac; pinata renders the sandbox's own `~/.m2/settings.xml`. When and how the copy is made is in [Copy a folder into a volume](#copy-a-folder-into-a-volume).
 
 ### The GitHub CLI
 
@@ -756,7 +778,7 @@ The command prints `user:token` in base64, as Basic authentication wants it; use
 
 ### Read the logs of a service
 
-A service volume and an entry of `mounts.volumes` with the same `name` are one volume, so the agent can read what the service writes there:
+To let the agent read what a service writes, mount the service's volume in the sandbox too, under the same `name`; the rules for such a shared volume are in [Services](#services):
 
 ```json
 {
@@ -772,8 +794,6 @@ A service volume and an entry of `mounts.volumes` with the same `name` are one v
   ]
 }
 ```
-
-The service runs as `1000:1000`, the sandbox user's ids, so the agent owns the files and can change them. The config is refused if a service that mounts `db-logs` sets another `user`.
 
 ### A JDK in a volume
 

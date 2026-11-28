@@ -93,7 +93,7 @@ const missingImage = (reference: string, after: "pull" | "build") =>
 const digestMismatch = (reference: string, actual: string, expected: string) =>
   new LauncherError(
     `image ${reference} has digest ${actual}, expected ${expected}`,
-    "update image.digest in the policy or publish the expected image",
+    "update the digest in image.reference or publish the expected image",
   );
 
 export const createImageOperations = (client: EngineClient, runner: CommandRunner) => {

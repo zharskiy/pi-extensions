@@ -8,7 +8,9 @@ import {
   forwardedNames,
   type LauncherContainerSpec,
   runPi,
+  seedVolumes,
   startLaunchContainer,
+  volumeSeeds,
 } from "../container/index.ts";
 import type { Launch } from "../grants/index.ts";
 import { type HostPi, readHostPiFiles } from "../hostpi/index.ts";
@@ -23,7 +25,14 @@ import {
 } from "../provision/index.ts";
 import { type DenialRecord, preambleText } from "../proxy/index.ts";
 import { errorMessage, settleAll, stateLayout, type WriteBackTable } from "../shared/index.ts";
-import { confirmBinds, type HostBind, type HostSessions, hostBinds } from "../workspace/index.ts";
+import {
+  confirmBinds,
+  type HostBind,
+  type HostSessions,
+  hostBinds,
+  hostVolumeSources,
+  type VolumeSource,
+} from "../workspace/index.ts";
 import { busyLaunches } from "./busy.ts";
 import { hostClipboard } from "./clipboard.ts";
 import { checkHostRoot, type LaunchContext, openContext } from "./context.ts";
@@ -37,10 +46,11 @@ import {
   probeSessionsShare,
   readyHostSessions,
 } from "./host-sessions.ts";
-import { hostPathNotices, launchNotices, proxyDetail } from "./launch-notices.ts";
+import { hostPathNotices, proxyDetail } from "./launch-notices.ts";
 import { beginLaunch, finishLaunch } from "./launches.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { writeOnce } from "./notices.ts";
+import { maxFilesNotice } from "./pinata/open-files.ts";
 import { runSetup, withAgentLock, withPrepareLock } from "./prepare.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
@@ -108,6 +118,7 @@ interface SandboxInput {
   writeBack: boolean;
   allowlist: WriteBackTable;
   binds: HostBind[];
+  volumeSources: VolumeSource[];
   probe: boolean;
   forwarded: ForwardedEnv;
   piArgs: string[];
@@ -346,10 +357,11 @@ const prepareContainer = async (
   const { image, route } = parts;
   const { render } = parts.files;
 
-  await writeOnce(deps, context.stateDir, [
-    ...render.notices.map((notice) => `pinata: ${notice}`),
-    ...launchNotices(context),
-  ]);
+  await writeOnce(
+    deps,
+    context.stateDir,
+    render.notices.map((notice) => `pinata: ${notice}`),
+  );
 
   cancelled.throwIfAborted();
 
@@ -370,20 +382,16 @@ const prepareContainer = async (
 
   confirmBinds(input.binds);
 
-  const { id, spec, notices } = await withAgentLock(agentLockOf(input), () =>
+  const { id, spec } = await withAgentLock(agentLockOf(input), () =>
     startLaunchContainer({
       backend,
-      stateDir: context.stateDir,
       spec: built,
       afterCreate: (created) => probeSessionsShare(backend, created, sessions),
-      pinnedImage: context.effective.config.image.digest !== undefined,
+      pinnedImage: context.effective.config.image.reference !== undefined,
     }),
   );
 
-  writeNotices(deps, [
-    ...notices,
-    ...(await hostPathNotices(input.piArgs, context.workspace.cwd, spec.mounts)),
-  ]);
+  writeNotices(deps, await hostPathNotices(input.piArgs, context.workspace.cwd, spec.mounts));
 
   return { containerId: id, spec, image };
 };
@@ -414,6 +422,20 @@ const setupContainer = (input: PreparedInput, containerId: string) => {
     stderr: deps.stderr,
     signal: cancelled,
     progress,
+  });
+};
+
+const seedContainerVolumes = (input: PreparedInput, containerId: string) => {
+  const { context } = input;
+
+  return seedVolumes({
+    backend: input.backend,
+    containerId,
+    stateDir: context.stateDir,
+    seeds: volumeSeeds(context.effective.config, context.stateDir, input.volumeSources),
+    platform: input.deps.platform,
+    signal: input.cancelled,
+    progress: input.progress,
   });
 };
 
@@ -449,6 +471,10 @@ const prepareSandbox = async (input: PreparedInput) => {
 
         return prepareContainer(input, { image, files: settled, route });
       });
+
+      cancelled.throwIfAborted();
+
+      await seedContainerVolumes(input, container.containerId);
 
       cancelled.throwIfAborted();
 
@@ -606,13 +632,13 @@ export const withSandbox = async (
 ) => {
   const files = await readHostPiFiles(hostAgentDirOf(deps));
   const sessions = hostSessionsOf(deps, context, files.settings);
-  const binds = probe
-    ? []
-    : hostBinds(context.effective.config.mounts.binds, {
-        home: deps.home,
-        env: deps.env,
-        roots: [...writableMounts(context, sessions), ...rootPaths(context.effective.config)],
-      });
+  const guard = {
+    home: deps.home,
+    env: deps.env,
+    roots: [...writableMounts(context, sessions), ...rootPaths(context.effective.config)],
+  };
+  const binds = probe ? [] : hostBinds(context.effective.config.mounts.binds, guard);
+  const volumeSources = probe ? [] : hostVolumeSources(context.effective.config.mounts.volumes, guard);
   const forwarded = forwardedOf(deps, context);
   const staged = stagedWith(report);
   const launch = await beginLaunch(deps, context, progress);
@@ -645,6 +671,7 @@ export const withSandbox = async (
         writeBack,
         allowlist,
         binds,
+        volumeSources,
         probe,
         forwarded,
         piArgs,
@@ -730,6 +757,12 @@ export const launch = async (args: string[], deps: CliDeps) => {
   }
 
   const { context, backend } = await openContext(deps, "sandbox");
+
+  await writeOnce(
+    deps,
+    context.stateDir,
+    (await maxFilesNotice(deps)).map((notice) => `pinata: ${notice}`),
+  );
 
   return withSandbox(deps, context, backend, pi, (sandbox) => startPi(deps, context, sandbox, piArgs), {
     writeBack: true,

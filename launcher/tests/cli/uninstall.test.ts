@@ -1,10 +1,7 @@
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
 import { releaseSandbox } from "../../cli/pinata/uninstall.ts";
 import { sha256Hex, stateLayout, withFileLock } from "../../shared/index.ts";
-import { exists } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
 
 const tracked = () => {
@@ -31,7 +28,6 @@ describe("releaseSandbox", () => {
     const harness = await createHarness({ backend: () => fake.backend });
     const { runs, teardown } = tracked();
     const repo = "c".repeat(64);
-    const mountPoint = join(harness.root, "elsewhere", "node_modules");
     const container = fake.addContainer({
       name: "pinata-a",
       labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: repo },
@@ -39,12 +35,7 @@ describe("releaseSandbox", () => {
       image: "x",
     });
 
-    await mkdir(mountPoint, { recursive: true });
-
-    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).created, [mountPoint]);
-
     await releaseSandbox(harness.deps, () => undefined, teardown);
-    expect(await exists(mountPoint)).toBe(false);
     expect(harness.proxyStops()).toBe(1);
     expect(runs.count).toBe(1);
     expect(fake.containers.has(container)).toBe(true);

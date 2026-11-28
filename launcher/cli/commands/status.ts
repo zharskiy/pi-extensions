@@ -5,9 +5,10 @@ import {
   installIdOf,
   isSession,
   LABELS,
+  pinnedImageOf,
   roleOf,
 } from "../../backend/index.ts";
-import { agentVolumeName, installServices, mountedVolumes, overlayVolumes } from "../../container/index.ts";
+import { agentVolumeName, installServices, mountedVolumes } from "../../container/index.ts";
 import { type Launch, liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { LauncherError, repoRecordOf, shortHash } from "../../shared/index.ts";
@@ -112,8 +113,9 @@ const proxyRow = async (deps: CliDeps, context: LaunchContext): Promise<Row> => 
 const imageRow = async (context: LaunchContext): Promise<Row> => {
   const { image } = context.effective.config;
   const record = await recordedImage(context.stateDir, context.effective.config);
-  const reference = record?.reference ?? image.reference ?? "pinata-base:local";
-  const digest = image.digest ?? record?.digest;
+  const pinned = image.reference === undefined ? undefined : pinnedImageOf(image.reference);
+  const reference = record?.reference ?? pinned?.name ?? "pinata-base:local";
+  const digest = pinned?.digest ?? record?.digest;
 
   return ["Image", digest === undefined ? `${reference}, not built yet` : `${reference} ${digest}`];
 };
@@ -132,31 +134,22 @@ const launchRows = async (deps: CliDeps, context: LaunchContext) => {
   return listed("Launches", texts, "none");
 };
 
-const volumeRows = (deps: CliDeps, context: LaunchContext) => {
-  const { config } = context.effective;
-  const overlays = overlayVolumes(context.workspace, config, context.stateDir);
-  const volumes = mountedVolumes(config, context.stateDir);
-
-  return [
-    ...listed(
-      "Overlays",
-      overlays.map((overlay) => `${tilde(deps, overlay.path)} (${overlay.name})`),
+const volumeRows = (context: LaunchContext) =>
+  listed(
+    "Volumes",
+    mountedVolumes(context.effective.config, context.stateDir).map(
+      (entry) => `${entry.target} (${entry.name})`,
     ),
-    ...listed(
-      "Volumes",
-      volumes.map((entry) => `${entry.target} (${entry.name})`),
-    ),
-  ];
-};
+  );
 
 export const statusCommand = async (deps: CliDeps) => {
-  const { context } = await openContext(deps, "host", { overlays: true });
+  const { context } = await openContext(deps, "host");
   const kind = context.workspace.isGitRepo ? "repository" : "folder";
   const rows = [
     ...(await runtimeRows(deps, context)),
     await proxyRow(deps, context),
     await imageRow(context),
-    ...volumeRows(deps, context),
+    ...volumeRows(context),
     ...(await launchRows(deps, context)),
     ...listed("Grants", await grantLines(context), "none"),
   ];

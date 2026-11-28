@@ -17,7 +17,15 @@ interface Group {
   detail: (brief: Briefs, has: (name: string) => boolean) => string | undefined;
 }
 
-const HIDDEN_WHEN_OK = new Set(["provider hosts", "host side", "file cache", "proxy", "proxy health", "mcp"]);
+const HIDDEN_WHEN_OK = new Set([
+  "provider hosts",
+  "open files",
+  "host side",
+  "file cache",
+  "proxy",
+  "proxy health",
+  "mcp",
+]);
 
 const joined = (separator: string, parts: Array<string | undefined>) =>
   parts.filter((part) => part !== undefined && part !== "").join(separator);

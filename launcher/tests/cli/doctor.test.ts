@@ -161,6 +161,7 @@ const hostSection = async (prepared: boolean) => [
   `  ok pi                ${await testedPiVersion()} at ~/.pi/agent/bin/pi; the sandbox runs the same version`,
   "  ok provider hosts    1 built-in providers with known hosts",
   expect.stringMatching(/^ {2}ok sessions {10}~\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
+  "  ok open files        kern.maxfiles is 1048576",
   ...(prepared ? ["  ok host side"] : []),
 ];
 
@@ -185,6 +186,7 @@ interface DoctorOptions {
   hostSettings?: unknown;
   denials?: DenialRecord[];
   args?: string[];
+  maxFiles?: number;
 }
 
 const doctorWith = async (options: DoctorOptions = {}) => {
@@ -193,6 +195,10 @@ const doctorWith = async (options: DoctorOptions = {}) => {
   const harness = await createHarness({
     backend: () => fake.backend,
     denials: options.denials ?? [],
+    respond: (call) =>
+      options.maxFiles !== undefined && call.file === "/usr/sbin/sysctl"
+        ? { stdout: `${options.maxFiles}\n` }
+        : undefined,
     proxy: {
       ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
     },
@@ -310,6 +316,17 @@ describe("pinata doctor", () => {
       "",
     ]);
     expect(harness.stderr()).toBe("");
+    expect(code).toBe(0);
+  });
+
+  it("warns by default when kern.maxfiles is below the target and says to run pinata install", async () => {
+    const { code, stdout } = await doctorWith({ hostAuth: EXAMPLE_AUTH, args: [], maxFiles: 122880 });
+
+    expect(stdout).toContain(
+      "  !  open files        kern.maxfiles is 122880, below 1048576, so the Mac can run out of open files\n" +
+        "     -> run pinata install on a terminal, which raises it with sudo and keeps it at boot\n",
+    );
+    expect(stdout).not.toContain("maxfilesperproc");
     expect(code).toBe(0);
   });
 
@@ -1384,6 +1401,20 @@ describe("pinata doctor on the host pi", () => {
     expect(found).toMatchObject({
       status: "ok",
       detail: "1.6.0 at ~/.pi/agent/bin/pi; the sandbox runs the same version",
+    });
+  });
+
+  it("says the sandbox image is pinned when image.reference is set", async () => {
+    const { found } = await hostPiCheck(async (harness) => {
+      await writeManagedPi(harness.hostAgentDir, "1.6.0");
+      await harness.writeJson(harness.userConfigFile, {
+        image: { reference: `registry.example.test/pi:1@sha256:${"b".repeat(64)}` },
+      });
+    });
+
+    expect(found).toMatchObject({
+      status: "ok",
+      detail: "1.6.0 at ~/.pi/agent/bin/pi; the sandbox image is pinned by image.reference",
     });
   });
 

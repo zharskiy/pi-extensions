@@ -10,8 +10,7 @@ const merge = (config: UserConfig) => mergeConfig(defaultConfig(), config);
 
 const COMPLETE_CONFIG: UserConfig = {
   image: {
-    reference: "registry.corp.test/pi",
-    digest: `sha256:${"d".repeat(64)}`,
+    reference: `registry.corp.test/pi@sha256:${"d".repeat(64)}`,
     packages: ["chromium"],
     npmGlobal: ["tool@1.0.0"],
     dockerfile: "/etc/pinata/layer.Dockerfile",
@@ -37,7 +36,6 @@ const COMPLETE_CONFIG: UserConfig = {
   mounts: {
     volumes: ["~/.cache/pip", { target: "/opt/data", name: "data" }],
     binds: [{ source: "/etc/corp", target: "/etc/corp" }],
-    autoOverlays: false,
   },
   setup: [["npm", "ci"]],
   services: [{ name: "db", command: ["db"], memoryGiB: 1 }],

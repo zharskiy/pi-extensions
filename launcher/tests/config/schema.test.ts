@@ -440,8 +440,18 @@ describe("sandbox-config.schema.json", () => {
     {
       name: "image.reference",
       node: (schema) => schema.properties?.image?.properties?.reference,
-      layer: (value) => ({ image: { reference: value, digest: `sha256:${"a".repeat(64)}` } }),
-      samples: ["ghcr.io/acme/pi:1", "", "  ", " x "],
+      layer: (value) => ({ image: { reference: value } }),
+      samples: [
+        `ghcr.io/acme/pi:1@sha256:${"a".repeat(64)}`,
+        `ghcr.io/acme/pi@sha256:${"a".repeat(64)}`,
+        `@sha256:${"a".repeat(64)}`,
+        `ghcr.io/acme/pi:1@sha256:${"A".repeat(64)}`,
+        `ghcr.io/acme/pi:1@sha256:${"a".repeat(64)}x`,
+        `a b@sha256:${"a".repeat(64)}`,
+        "ghcr.io/acme/pi:1",
+        "",
+        "  ",
+      ],
     },
   ];
 
@@ -499,11 +509,6 @@ describe("sandbox-config.schema.json", () => {
 
     expect(rules?.uniqueItems).toBe(true);
     expect(rules?.items?.dependentRequired).toEqual({ template: ["header"] });
-    expect(schema.properties?.image?.dependentRequired).toEqual({
-      reference: ["digest"],
-      digest: ["reference"],
-    });
-    expect(validatorAccepts({ image: { reference: "corp/pi:1" } })).toBe(false);
     expect(validatorAccepts({ image: { digest: `sha256:${"a".repeat(64)}` } })).toBe(false);
     expect(validatorAccepts({ mounts: { volumes: ["~/.npm", "~/.npm/cache"] } })).toBe(false);
     expect(

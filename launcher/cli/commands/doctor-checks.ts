@@ -28,7 +28,7 @@ type SkipExplained = Explained & Pick<CheckResult, "neutral">;
 export const VERBOSE_FLAG = "--verbose";
 
 const LAYOUT: Array<[Section, string[]]> = [
-  ["host", ["user config", "pi", "provider hosts", "sessions", "host side"]],
+  ["host", ["user config", "pi", "provider hosts", "sessions", "open files", "host side"]],
   [
     "sandbox",
     [

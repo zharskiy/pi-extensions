@@ -10,9 +10,6 @@ export const containerName = (repoRoot: string, launchId: string) =>
 
 export const agentVolumeName = (install: string) => `pinata-agent-${install}`;
 
-export const cacheVolumeName = (install: string, repoRoot: string, path: string) =>
-  `pinata-cache-${install}-${shortRepoHash(repoRoot)}-${pathHash(path)}`;
-
 export const configVolumeName = (stateDir: string, identity: string) =>
   `pinata-shared-${installIdOf(stateDir)}-${pathHash(identity)}`;
 

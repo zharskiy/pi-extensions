@@ -135,7 +135,7 @@ describe("image build network", () => {
     await expect(failure).rejects.toThrow(/parent proxy needs credentials/);
     await expect(failure).rejects.not.toThrow(/hunter2/);
     await expect(failure).rejects.toMatchObject({
-      hint: "build on a network that needs no proxy credentials; a prebuilt image (image.reference and image.digest) avoids the build only when image.packages, image.npmGlobal and image.dockerfile are unset",
+      hint: "build on a network that needs no proxy credentials; a prebuilt image (image.reference) avoids the build only when image.packages, image.npmGlobal and image.dockerfile are unset",
     });
   });
 
@@ -143,7 +143,7 @@ describe("image build network", () => {
     const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const base = sandboxConfig();
-    const config = { ...base, image: { reference, digest: "sha256:pinned" } };
+    const config = { ...base, image: { reference: `${reference}@sha256:pinned` } };
     const result = await ensureSandboxImage({
       backend: fake.backend,
       config,

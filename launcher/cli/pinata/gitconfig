@@ -1,0 +1,3 @@
+[core]
+	checkStat = minimal
+	trustctime = false

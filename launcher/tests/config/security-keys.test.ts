@@ -181,11 +181,11 @@ describe("validateConfig with the credential, egress, tls and image keys", () =>
       ],
       [
         { image: { reference: "corp/pi:1" } },
-        "image sets reference and digest only together: the image is pulled by its digest, or built here without either",
+        "image.reference must carry the digest it is pulled by, as name@sha256:<64 hex digits>",
       ],
       [
-        { image: { digest: `sha256:${"a".repeat(64)}` } },
-        "image sets reference and digest only together: the image is pulled by its digest, or built here without either",
+        { image: { reference: `corp/pi:1@sha256:${"a".repeat(63)}` } },
+        "image.reference must carry the digest it is pulled by, as name@sha256:<64 hex digits>",
       ],
       [{ image: { registry: { host: "r.test" } } }, "image.registry is not a known key"],
     ];

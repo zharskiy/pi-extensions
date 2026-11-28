@@ -6,7 +6,8 @@ import { launcherVersion } from "../../../cli/versions.ts";
 import { exists } from "../../support/temp-dir.ts";
 import { createPinata } from "./support.ts";
 
-const BLOCK = (home: string) => `# pinata begin\nexport PATH='${home}/.local/bin':"$PATH"\n# pinata end\n`;
+const BLOCK = (home: string) =>
+  `# pinata begin\nexport PATH='${home}/.local/bin':"$PATH"\nexport GIT_OPTIONAL_LOCKS=0\n# pinata end\n`;
 
 const BROKEN = ["# pinata begin\n", `${"# pinata begin\nx\n# pinata end\n".repeat(2)}`];
 
@@ -26,7 +27,8 @@ describe("pinata install", () => {
         "ok Registered pinata's extensions with pi",
         "ok Linked pi to the sandbox (~/.local/bin/pi)",
         "ok Linked pinata to this checkout (~/.local/bin/pinata)",
-        "ok Added ~/.local/bin to PATH in ~/.zshrc",
+        "ok Added ~/.local/bin to PATH and GIT_OPTIONAL_LOCKS=0 to ~/.zshrc",
+        "ok Added pinata's git settings to ~/.gitconfig",
         "",
         "Pinata is installed.",
         "  Start:     open a new terminal, then cd <your repo> && pi",
@@ -107,6 +109,60 @@ describe("pinata install", () => {
       expect(await readFile(zshrc, "latin1")).toBe(rc);
     },
   );
+
+  it("upgrades an older one-line block in place in every rc file it finds", async () => {
+    const pinata = await createPinata();
+    const old = "alias ll=ls\n# pinata begin\nexport PATH=x\n# pinata end\nalias la=ls\n";
+    const files = [".zshrc", ".bashrc", ".bash_profile"].map((name) => join(pinata.home, name));
+
+    await Promise.all(files.map((file) => writeFile(file, old)));
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(await Promise.all(files.map((file) => readFile(file, "utf8")))).toEqual(
+      files.map(() => `alias ll=ls\n${BLOCK(pinata.home)}alias la=ls\n`),
+    );
+    expect(pinata.harness.stdout()).toContain(
+      "ok Added ~/.local/bin to PATH and GIT_OPTIONAL_LOCKS=0 to ~/.bash_profile\n",
+    );
+  });
+
+  it("edits a linked ~/.zshrc through the link, and leaves a link to a missing file alone", async () => {
+    const pinata = await createPinata();
+    const zshrc = join(pinata.home, ".zshrc");
+    const bashrc = join(pinata.home, ".bashrc");
+    const real = join(pinata.harness.root, "dotfiles", "zshrc");
+    const missing = join(pinata.harness.root, "dotfiles", "bashrc");
+
+    await mkdir(join(real, ".."), { recursive: true });
+
+    await writeFile(real, "alias ll=ls\n");
+
+    await symlink(real, zshrc);
+
+    await symlink(missing, bashrc);
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect((await lstat(zshrc)).isSymbolicLink()).toBe(true);
+    expect(await readFile(real, "utf8")).toBe(`alias ll=ls\n\n${BLOCK(pinata.home)}`);
+    expect(await exists(missing)).toBe(false);
+    expect(pinata.harness.stdout()).toContain(
+      "! Left ~/.bashrc alone: it is a link to a file that does not exist\n",
+    );
+  });
+
+  it("writes a non-ASCII home into the PATH block byte for byte", async () => {
+    const pinata = await createPinata();
+    const home = join(pinata.harness.root, "Café Мир");
+    const zshrc = join(home, ".zshrc");
+
+    await mkdir(home);
+
+    pinata.harness.deps.home = home;
+    pinata.harness.deps.env.PI_CODING_AGENT_DIR = pinata.harness.hostAgentDir;
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(await readFile(zshrc)).toEqual(Buffer.from(`\n${BLOCK(home)}`, "utf8"));
+  });
 
   it.each([
     ["a file of its own", (shim: string) => writeFile(shim, "#!/bin/sh\necho mine\n")],

@@ -110,6 +110,7 @@ describe("renderAgentDir", () => {
       "skills/deploy/SKILL.md",
       "skills/deploy/run.sh",
       "tools/",
+      "tools/gitconfig",
       "tools/m2-settings.xml",
       "tools/status.json",
     ]);
@@ -219,9 +220,13 @@ describe("renderAgentDir", () => {
       "mcp.json",
       "models.json",
       "tools/",
+      "tools/gitconfig",
       "tools/m2-settings.xml",
       "tools/status.json",
     ]);
+    expect(await readFile(join(result.renderDir, "tools", "gitconfig"), "utf8")).toBe(
+      "[core]\n\tcheckStat = minimal\n\ttrustctime = false\n",
+    );
   });
 
   it("renders Maven settings with the sandbox proxy and no credentials when the host has no settings.xml", async () => {
@@ -288,6 +293,9 @@ describe("renderAgentDir", () => {
     );
     expect(await read("gitconfig")).toBe(
       [
+        "[core]",
+        "\tcheckStat = minimal",
+        "\ttrustctime = false",
         "[user]",
         '\tname = "Max \\"Z\\""',
         '\temail = "max@corp.test"',

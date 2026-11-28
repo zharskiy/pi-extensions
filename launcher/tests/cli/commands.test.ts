@@ -174,6 +174,20 @@ describe("pinata status", () => {
       "",
     ]);
   });
+
+  it("shows a pinned image by its name and the digest its reference carries", async () => {
+    const fake = createFakeBackend();
+    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
+    const harness = await createHarness({ backend: () => down });
+    const digest = `sha256:${"b".repeat(64)}`;
+
+    await harness.writeJson(harness.userConfigFile, {
+      image: { reference: `registry.example.test/pi:1@${digest}` },
+    });
+
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toContain(`  Image:     registry.example.test/pi:1 ${digest}\n`);
+  });
 });
 
 describe("pinata config", () => {
@@ -293,7 +307,7 @@ describe("the sweep", () => {
     expect(fake.relays.size).toBe(1);
   });
 
-  it("forgets a repository whose root no longer exists, with its state and volumes", async () => {
+  it("forgets a repository whose root no longer exists, with its state, and keeps its volumes", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const gone = await tempDir("gone-repo");
@@ -302,16 +316,13 @@ describe("the sweep", () => {
 
     await harness.writeJson(files.record, { root: gone });
 
-    await fake.backend.ensureVolume("pinata-agent-gone", {
-      [LABELS.repoHash]: hash,
-      [LABELS.repoRoot]: gone,
-    });
+    await fake.backend.ensureVolume("pinata-agent-gone");
 
     await rm(gone, { recursive: true, force: true });
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(await readFile(files.record, "utf8").catch(() => undefined)).toBeUndefined();
-    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(true);
     expect(harness.stdout()).toContain(`forgot ${gone}, which no longer exists\n`);
   });
 
@@ -387,23 +398,6 @@ describe("the sweep", () => {
     expect(harness.stderr()).not.toContain("unreachable");
   });
 
-  it("removes a volume whose repository no longer exists on disk", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const gone = await tempDir("gone-repo");
-
-    await fake.backend.ensureVolume("pinata-agent-gone", {
-      [LABELS.repoHash]: sha256Hex(gone),
-      [LABELS.repoRoot]: gone,
-    });
-
-    await rm(gone, { recursive: true, force: true });
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
-    expect(harness.stdout()).toContain("removed volume pinata-agent-gone\n");
-  });
-
   it("keeps the pi folder every folder's sandbox shares when the repository that made it is gone", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
@@ -423,26 +417,21 @@ describe("the sweep", () => {
 
     await run([], harness.deps);
 
-    const [agent = ""] = volumePlan({
-      workspace: { cwd: harness.repoRoot, repoRoot: harness.repoRoot, isGitRepo: true },
-      config: sandboxConfig(),
-      stateDir: harness.stateDir,
-    }).map((volume) => volume.name);
+    const [agent = ""] = volumePlan(sandboxConfig(), harness.stateDir).map((volume) => volume.name);
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(0);
     expect(fake.volumes.has(agent)).toBe(true);
-    expect(harness.stdout()).not.toContain("removed volume");
   });
 
-  it("keeps a volume without a repository label", async () => {
+  it("removes no volume in the daily collection", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await fake.backend.ensureVolume("pinata-agent-unlabelled");
+    await fake.backend.ensureVolume("pinata-agent-other");
 
     expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pinata-agent-unlabelled")).toBe(true);
+    expect(fake.volumes.has("pinata-agent-other")).toBe(true);
   });
 });
 
@@ -488,7 +477,6 @@ describe("pinata help and version", () => {
     expect(await runPinata(["help"], harness.deps)).toBe(0);
     expect(await runPinata([], harness.deps)).toBe(0);
     expect(harness.stdout().match(/pinata doctor/g)).toHaveLength(2);
-    expect(harness.stdout()).not.toContain("pinata gc");
     expect(harness.stdout()).toContain("pinata restart  ");
   });
 

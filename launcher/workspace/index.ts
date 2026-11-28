@@ -1,8 +1,6 @@
-export { confirmBinds, type HostBind, hostBinds } from "./binds.ts";
-export { removeCreatedDirs } from "./created.ts";
+export { confirmBinds, type HostBind, hostBinds, hostVolumeSources, type VolumeSource } from "./binds.ts";
 export { discoverWorkspace, workspaceFolder } from "./discover.ts";
 export { assertHostSessionsDir, assertSafeMounts } from "./guard.ts";
-export { byDepth } from "./paths.ts";
 export { type HostSessions, hostSessionsChoice, hostSessionsDir } from "./pi-session-dir.ts";
 export {
   assertWithinHostRoot,

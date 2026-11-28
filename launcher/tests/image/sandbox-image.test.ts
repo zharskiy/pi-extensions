@@ -88,7 +88,7 @@ describe("ensureSandboxImage", () => {
     const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const registry = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const pinned = await inputOf(registry, {
-      config: sandboxConfig({ image: { reference, digest: "sha256:pinned" } }),
+      config: sandboxConfig({ image: { reference: `${reference}@sha256:pinned` } }),
     });
 
     await ensureSandboxImage(pinned.input);
@@ -104,7 +104,7 @@ describe("ensureSandboxImage", () => {
     const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const { input, asked } = await inputOf(fake, {
-      config: sandboxConfig({ image: { reference, digest: "sha256:pinned" } }),
+      config: sandboxConfig({ image: { reference: `${reference}@sha256:pinned` } }),
     });
 
     expect(await ensureSandboxImage(input)).toEqual({

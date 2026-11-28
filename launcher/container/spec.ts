@@ -18,19 +18,17 @@ import {
   LauncherError,
   PI_SESSION_DIR_VARIABLE,
   realOrResolvedSync,
+  repoHash,
 } from "../shared/index.ts";
 import type { HostSessions, Workspace } from "../workspace/index.ts";
 import { containerName } from "./names.ts";
-import { type PlannedVolume, repoLabels, serviceVolumeNames, volumePlan } from "./volumes.ts";
+import { type PlannedVolume, serviceVolumeNames, volumePlan } from "./volumes.ts";
 
 export const HANDOVER_CAPABILITIES = ["CHOWN"];
 
 export interface LauncherContainerSpec extends ContainerSpec {
   workdir: string;
-  volumeLabels: Record<string, Record<string, string>>;
   ownedPaths: string[];
-  guardedPaths: string[];
-  notices: string[];
 }
 
 interface SpecProxy {
@@ -177,34 +175,11 @@ const renderMounts = (renderDir: string) => [
 
 const baseLabels = (input: ContainerSpecInput) => ({
   [LABELS.role]: "agent",
-  ...repoLabels(input.workspace.repoRoot),
+  [LABELS.repoHash]: repoHash(input.workspace.repoRoot),
   [LABELS.launchId]: input.launchId,
   [LABELS.imageDigest]: input.image.digest,
   ...sessionsLabel(input.hostSessions),
 });
-
-const guardedPathsOf = (binds: MountSpec[]) => [
-  ...new Set(binds.filter((mount) => mount.readOnly).map((mount) => mount.target)),
-];
-
-const placeVolumes = (planned: PlannedVolume[], guarded: string[]) => {
-  const placed = planned.map((entry) => ({
-    entry,
-    inside:
-      entry.key === "mounts.autoOverlays"
-        ? guarded.find((target) => isWithin(entry.target, target))
-        : undefined,
-  }));
-
-  return {
-    volumes: placed.flatMap(({ entry, inside }) => (inside === undefined ? [entry] : [])),
-    notices: placed.flatMap(({ entry, inside }) =>
-      inside === undefined
-        ? []
-        : [`${entry.target} is not overlaid: it lies inside ${inside}, which the sandbox protects`],
-    ),
-  };
-};
 
 const TABLE_HINT = "start pi in another folder";
 
@@ -250,12 +225,10 @@ const checkConfigMounts = (configured: MountSpec[], mounts: MountSpec[]) => {
 
 export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainerSpec => {
   const { workspace, config } = input;
-  const planned = volumePlan({ workspace, config, stateDir: input.stateDir });
+  const volumes = volumePlan(config, input.stateDir);
   const binds = [bind(input.workspaceRoot, input.workspaceRoot, false), ...sessionsMounts(input)];
   const render = renderMounts(input.renderDir);
   const configBinds = input.binds.map((entry) => bind(entry.source, entry.target, true));
-  const guardedPaths = guardedPathsOf([...binds, ...render]);
-  const { volumes, notices } = placeVolumes(planned, guardedPaths);
   const serviceVolumes = serviceVolumeNames(input.stateDir, config.services);
   const owned = volumes.filter((entry) => entry.key !== "agent" && !serviceVolumes.has(entry.name));
   const toMount = (entry: PlannedVolume) => volume(entry.name, entry.target);
@@ -288,6 +261,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     mounts,
     network: input.proxy.network,
     env: {
+      GIT_OPTIONAL_LOCKS: "0",
       ...config.env.set,
       ...sandboxEnv(input),
       ...handoverEnv(ownedPaths),
@@ -306,9 +280,6 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     },
     capabilities: HANDOVER_CAPABILITIES,
     autoRemove: true,
-    volumeLabels: Object.fromEntries(volumes.map((entry) => [entry.name, entry.labels])),
     ownedPaths,
-    guardedPaths,
-    notices,
   };
 };

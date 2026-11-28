@@ -14,7 +14,7 @@ import { newLaunchId, registerLaunch } from "../../grants/index.ts";
 import type { DenialRecord, ProxyInput, ProxyRecord } from "../../proxy/index.ts";
 import { LauncherError, processMark, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend as createBareBackend, type FakeExec } from "../support/fake-backend.ts";
-import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
+import { argvOf, createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 
 interface Collected {
   stream: NodeJS.WritableStream;
@@ -409,6 +409,10 @@ export const createHarness = async (options: HarnessOptions = {}) => {
 
     if (call.interactive) {
       return { code: 0 };
+    }
+
+    if (argvOf(call).join(" ") === "/usr/sbin/sysctl -n kern.maxfiles") {
+      return { stdout: "1048576\n" };
     }
 
     if (basename(call.file) === "npm") {

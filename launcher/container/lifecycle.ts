@@ -1,19 +1,9 @@
-import { lstat, mkdir, realpath } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import {
-  type Backend,
-  type ContainerSummary,
-  execCapture,
-  isSession,
-  LABELS,
-  type MountSpec,
-} from "../backend/index.ts";
-import { errorMessage, GUEST_PATHS, isWithin, LauncherError, recordCreatedDirs } from "../shared/index.ts";
+import { type Backend, type ContainerSummary, execCapture, isSession, LABELS } from "../backend/index.ts";
+import { errorMessage, GUEST_PATHS, LauncherError } from "../shared/index.ts";
 import type { LauncherContainerSpec } from "./spec.ts";
 
 export interface LaunchContainerInput {
   backend: Backend;
-  stateDir: string;
   spec: LauncherContainerSpec;
   afterCreate?: (id: string) => Promise<void>;
   pinnedImage?: boolean;
@@ -22,7 +12,6 @@ export interface LaunchContainerInput {
 export interface LaunchContainer {
   id: string;
   spec: LauncherContainerSpec;
-  notices: string[];
 }
 
 const STOP_SECONDS = 3;
@@ -39,116 +28,11 @@ export const discardContainer = async (
   await backend.removeContainer(container.id);
 };
 
-const runtimeSpec = ({
-  volumeLabels: _labels,
-  ownedPaths: _owned,
-  guardedPaths: _guarded,
-  notices: _notices,
-  ...spec
-}: LauncherContainerSpec) => spec;
+const runtimeSpec = ({ ownedPaths: _owned, ...spec }: LauncherContainerSpec) => spec;
 
 const DEFAULT_OWNER = "1000:1000";
 
 const ROOT_USER = "0";
-
-const MOUNT_POINT_HINT = "replace it with a directory, or remove it so pinata can create one";
-
-const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
-
-const isTaken = (error: unknown) => (error as NodeJS.ErrnoException).code === "EEXIST";
-
-const foundAt = (path: string) =>
-  lstat(path).catch((error: unknown) => (isMissing(error) ? undefined : Promise.reject(error)));
-
-type DirMade = (path: string) => Promise<void>;
-
-interface MountPointGuard {
-  onMade: DirMade;
-  guarded: string[];
-}
-
-const PROTECTED_HINT = "choose a path outside the git dirs and the read-only mounts";
-
-const realOrSelf = (path: string) => realpath(path).catch(() => path);
-
-const realTarget = async (path: string, exists: boolean) =>
-  exists ? realpath(path) : join(await realpath(dirname(path)), basename(path));
-
-const assertUnguarded = async (path: string, exists: boolean, guarded: string[]) => {
-  const real = await realTarget(path, exists);
-  const inside = guarded.find((target) => isWithin(real, target));
-
-  if (inside !== undefined) {
-    throw new LauncherError(
-      `the mount point ${path} lies inside ${inside}, which the sandbox protects`,
-      PROTECTED_HINT,
-    );
-  }
-};
-
-const ensureMountPoint = async (root: string, path: string, guard: MountPointGuard): Promise<void> => {
-  const found = await foundAt(path);
-
-  if (found?.isSymbolicLink() === true) {
-    throw new LauncherError(`the mount point ${path} is a symbolic link`, MOUNT_POINT_HINT);
-  }
-
-  if (found !== undefined && !found.isDirectory()) {
-    throw new LauncherError(`the mount point ${path} is not a directory`, MOUNT_POINT_HINT);
-  }
-
-  if (found !== undefined && !isWithin(await realpath(path), await realpath(root))) {
-    throw new LauncherError(`the mount point ${path} leads outside ${root}`, MOUNT_POINT_HINT);
-  }
-
-  if (path === root) {
-    return;
-  }
-
-  if (found !== undefined) {
-    await assertUnguarded(path, true, guard.guarded);
-
-    return;
-  }
-
-  await ensureMountPoint(root, dirname(path), guard);
-
-  await assertUnguarded(path, false, guard.guarded);
-
-  await mkdir(path).then(
-    () => guard.onMade(path),
-    (error: unknown) => (isTaken(error) ? ensureMountPoint(root, path, guard) : Promise.reject(error)),
-  );
-};
-
-const writableRootOf = (mounts: MountSpec[], target: string) =>
-  mounts.find(
-    (mount) =>
-      mount.kind === "bind" &&
-      !mount.readOnly &&
-      mount.source === mount.target &&
-      mount.target !== target &&
-      isWithin(target, mount.target),
-  )?.target;
-
-const ensureMountPoints = async (spec: LauncherContainerSpec, onMade: DirMade) => {
-  const { mounts } = spec;
-  const guard = { onMade, guarded: await Promise.all(spec.guardedPaths.map(realOrSelf)) };
-  const outcomes = await Promise.allSettled(
-    mounts
-      .filter((mount) => mount.kind === "volume")
-      .flatMap((mount) => {
-        const root = writableRootOf(mounts, mount.target);
-
-        return root === undefined ? [] : [ensureMountPoint(root, mount.target, guard)];
-      }),
-  );
-  const failed = outcomes.find((outcome) => outcome.status === "rejected");
-
-  if (failed !== undefined) {
-    throw failed.reason;
-  }
-};
 
 const ROOT_SHELL = "/bin/sh";
 
@@ -217,7 +101,7 @@ const HANDOVER_HINT = "run pinata doctor, and check the targets in mounts.volume
 
 const STARTUP_HINT = "run pinata doctor";
 
-const PINNED_IMAGE_HINT = "the image is pinned by image.digest and may predate this pinata version";
+const PINNED_IMAGE_HINT = "the image is pinned by image.reference and may predate this pinata version";
 
 const handOverVolumes = async (backend: Backend, id: string, spec: LauncherContainerSpec) => {
   if (spec.ownedPaths.length === 0) {
@@ -301,36 +185,13 @@ const settleStartup = async (input: LaunchContainerInput, id: string, spec: Laun
   }
 };
 
-const specRepoHash = (spec: LauncherContainerSpec) => spec.labels[LABELS.repoHash] ?? "";
-
-const pruneCacheVolumes = async (backend: Backend, spec: LauncherContainerSpec) => {
-  const mounted = new Set(
-    spec.mounts.filter((mount) => mount.kind === "volume").map((mount) => mount.source),
-  );
-  const stale = (await backend.listVolumes()).filter(
-    (volume) =>
-      volume.labels[LABELS.repoHash] === specRepoHash(spec) &&
-      volume.labels[LABELS.cachePath] !== undefined &&
-      !volume.inUse &&
-      !mounted.has(volume.name),
-  );
-
-  await Promise.all(stale.map((volume) => backend.removeVolume(volume.name).catch(() => undefined)));
-};
-
 export const startLaunchContainer = async (input: LaunchContainerInput): Promise<LaunchContainer> => {
   const { backend, spec } = input;
   const { mounts } = spec;
 
-  await pruneCacheVolumes(backend, spec);
-
   await Promise.all(
-    mounts
-      .filter((mount) => mount.kind === "volume")
-      .map((mount) => backend.ensureVolume(mount.source, spec.volumeLabels[mount.source])),
+    mounts.filter((mount) => mount.kind === "volume").map((mount) => backend.ensureVolume(mount.source)),
   );
-
-  await ensureMountPoints(spec, (path) => recordCreatedDirs(input.stateDir, specRepoHash(spec), [path]));
 
   const { id } = await backend.createContainer(runtimeSpec(spec));
 
@@ -338,7 +199,7 @@ export const startLaunchContainer = async (input: LaunchContainerInput): Promise
 
   await settleStartup(input, id, spec);
 
-  return { id, spec, notices: spec.notices };
+  return { id, spec };
 };
 
 export const removeLaunchContainer = async (backend: Backend, launchId: string) => {

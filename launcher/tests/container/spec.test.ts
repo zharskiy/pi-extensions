@@ -8,7 +8,6 @@ import {
   forwardedEnv,
   forwardedNames,
   mountedVolumes,
-  overlayVolumes,
   volumePlan,
 } from "../../container/index.ts";
 import type { ContainerSpecInput } from "../../container/spec.ts";
@@ -59,7 +58,6 @@ describe("buildContainerSpec", () => {
     expect(buildContainerSpec(specInput()).labels).toEqual({
       "pinata.role": "agent",
       "pinata.repo-hash": repoHash,
-      "pinata.repo-root": repoRoot,
       "pinata.launch-id": launchId,
       "pinata.image-digest": "sha256:abc",
       "pinata.session-dir": "sessions.host is off",
@@ -118,71 +116,15 @@ describe("buildContainerSpec", () => {
     ).toBe(agentVolume);
   });
 
-  it("labels the agent volume with no repository, so the sweep and a folder's reset never take it", () => {
-    const other = { cwd: "/work/other", repoRoot: "/work/other", isGitRepo: false };
-    const agentOf = (workspace: typeof other) =>
-      volumePlan({ workspace, config: sandboxConfig(), stateDir: "/state" }).find(
-        (volume) => volume.key === "agent",
-      );
-
-    expect(agentOf({ cwd: repoRoot, repoRoot, isGitRepo: true })).toEqual(agentOf(other));
-    expect(agentOf(other)?.labels).toEqual({});
-  });
-
-  it("lists the repository's agent and overlay volumes", () => {
-    const config = sandboxConfig();
-    const input = specInput({
-      config,
-      workspace: { cwd: repoRoot, repoRoot, isGitRepo: true, overlays: ["/work/repo/node_modules"] },
-    });
+  it("plans the agent volume and the mounts.volumes caches only", () => {
+    const config = sandboxConfig({ mounts: { volumes: ["~/.npm"] } });
+    const input = specInput({ config });
     const volumes = buildContainerSpec(input)
       .mounts.filter((mount) => mount.kind === "volume")
       .map((mount) => mount.source);
 
-    expect(
-      volumePlan({ workspace: input.workspace, config, stateDir: "/state" }).map((volume) => volume.name),
-    ).toEqual(volumes);
-  });
-
-  it("overlays the build output of every marker folder with a volume", () => {
-    const workspace = {
-      cwd: repoRoot,
-      repoRoot,
-      gitCommonDir: "/work/repo/.git",
-      isGitRepo: true,
-      overlays: ["/work/repo/node_modules", "/work/repo/api/.venv"],
-    };
-    const config = sandboxConfig();
-    const input = specInput({ workspace, config });
-    const mounts = buildContainerSpec(input).mounts;
-
-    expect(overlayVolumes(workspace, config, "/state")).toEqual([
-      {
-        path: "/work/repo/node_modules",
-        name: `pinata-cache-${installIdOf("/state")}-${repoHash.slice(0, 12)}-${sha256Hex("node_modules").slice(0, 8)}`,
-      },
-      {
-        path: "/work/repo/api/.venv",
-        name: `pinata-cache-${installIdOf("/state")}-${repoHash.slice(0, 12)}-${sha256Hex("api/.venv").slice(0, 8)}`,
-      },
-    ]);
-    expect(mountAt(mounts, "/work/repo/api/.venv")).toMatchObject({ kind: "volume", readOnly: false });
-    expect(volumePlan({ workspace, config, stateDir: "/state" }).map((volume) => volume.name)).toEqual(
-      mounts.filter((mount) => mount.kind === "volume").map((mount) => mount.source),
-    );
-  });
-
-  it("names no overlay volume when overlays are off", () => {
-    const workspace = {
-      cwd: repoRoot,
-      repoRoot,
-      isGitRepo: false,
-      overlays: ["/work/repo/web/node_modules"],
-    };
-
-    expect(overlayVolumes(workspace, sandboxConfig({ mounts: { autoOverlays: false } }), "/state")).toEqual(
-      [],
-    );
+    expect(volumePlan(config, "/state").map((volume) => volume.key)).toEqual(["agent", "mounts.volumes"]);
+    expect(volumePlan(config, "/state").map((volume) => volume.name)).toEqual(volumes);
   });
 
   it("refuses a bind target inside the workspace root before the engine could make its mount point there", () => {
@@ -326,6 +268,7 @@ describe("buildContainerSpec", () => {
 
   it("holds only the proxy and static sandbox settings, no forwarded terminal variables", () => {
     expect(buildContainerSpec(specInput()).env).toEqual({
+      GIT_OPTIONAL_LOCKS: "0",
       HTTPS_PROXY: "http://pinata-proxy:3128",
       HTTP_PROXY: "http://pinata-proxy:3128",
       ALL_PROXY: "http://pinata-proxy:3128",
@@ -367,14 +310,14 @@ describe("buildContainerSpec", () => {
     expect(forwardedEnv(Object.keys(hostEnv), hostEnv)).toEqual({ EDITOR: "vi" });
   });
 
-  it("names every variable it sets as launcher-set, so none can be forwarded over it", () => {
+  it("names every variable it sets but its defaults as launcher-set, so none can be forwarded over it", () => {
     const spec = buildContainerSpec(
       specInput({
         hostSessions: { dir: "/Users/dev/.pi/agent/sessions/--work-repo--" },
         toolEnv: { GITLAB_TOKEN: "pinata-gl", GITLAB_HOST: "gitlab.com" },
       }),
     );
-    const names = Object.keys(spec.env);
+    const names = Object.keys(spec.env).filter((name) => name !== "GIT_OPTIONAL_LOCKS");
 
     expect(names).toEqual(
       expect.arrayContaining(["HTTPS_PROXY", "NODE_EXTRA_CA_CERTS", "PI_CODING_AGENT_SESSION_DIR"]),
@@ -412,6 +355,15 @@ describe("buildContainerSpec", () => {
     expect(env).toEqual(expect.objectContaining(buildContainerSpec(specInput()).env));
   });
 
+  it("gives way to an env.set value for a default it sets, and lets env.allow forward one", () => {
+    const config = sandboxConfig({ env: { allow: [], set: { GIT_OPTIONAL_LOCKS: "1" } } });
+
+    expect(buildContainerSpec(specInput({ config })).env.GIT_OPTIONAL_LOCKS).toBe("1");
+    expect(forwardedEnv(["GIT_OPTIONAL_LOCKS"], { GIT_OPTIONAL_LOCKS: "1" })).toEqual({
+      GIT_OPTIONAL_LOCKS: "1",
+    });
+  });
+
   it("forwards no host value for a name env.set sets, so the env.set value stays", () => {
     const env = { allow: ["TERM", "EDITOR", "LANG"], set: { EDITOR: "vi" } };
 
@@ -429,16 +381,12 @@ describe("buildContainerSpec", () => {
     });
   });
 
-  it("guards only its read-only mounts, none of them inside the workspace root, and has no notice", () => {
-    const workspace = { ...specInput().workspace, overlays: ["/work/repo/node_modules"] };
-    const spec = buildContainerSpec(specInput({ workspace }));
+  it("mounts no volume inside the workspace root, so its build output is the host's", () => {
+    const spec = buildContainerSpec(specInput());
 
-    expect(spec.guardedPaths).toEqual(
-      spec.mounts.filter((mount) => mount.readOnly && mount.kind === "bind").map((mount) => mount.target),
-    );
-    expect(spec.guardedPaths.filter((path) => path.startsWith("/work"))).toEqual([]);
-    expect(mountAt(spec.mounts, "/work/repo/node_modules")?.kind).toBe("volume");
-    expect(spec.notices).toEqual([]);
+    expect(
+      spec.mounts.filter((mount) => mount.kind === "volume" && mount.target.startsWith("/work")),
+    ).toEqual([]);
   });
 
   it("works in the repo root and carries the configured resources", () => {

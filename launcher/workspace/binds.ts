@@ -20,7 +20,34 @@ export interface HostBind {
   directory: boolean;
 }
 
-const BIND_HINT = "bind a folder or file other than the home dir, apart from the paths the sandbox protects";
+export interface VolumeSource {
+  index: number;
+  written: string;
+  requested: string;
+  source: string;
+}
+
+interface GuardedSource {
+  key: string;
+  written: string;
+  source: string;
+  share: string;
+}
+
+interface SourceHints {
+  refused: string;
+  overlap: string;
+}
+
+const BIND_HINTS: SourceHints = {
+  refused: "bind a folder or file other than the home dir, apart from the paths the sandbox protects",
+  overlap: "bind a folder or file apart from the folders the sandbox already mounts",
+};
+
+const VOLUME_SOURCE_HINTS: SourceHints = {
+  refused: "copy a folder other than the home dir, apart from the paths the sandbox protects",
+  overlap: "copy a folder apart from the folders the sandbox already mounts",
+};
 
 const keyOf = (index: number) => `mounts.binds[${index}].source`;
 
@@ -28,6 +55,27 @@ const realOf = (path: string, home: string) => realOrResolvedSync(resolve(expand
 
 const overlapping = (source: string, roots: string[]) =>
   roots.find((root) => isWithin(source, root) || isWithin(root, source));
+
+const guardSource = (guarded: GuardedSource, hints: SourceHints, context: BindContext) => {
+  const { key, written, source } = guarded;
+  const problem = shareProblem(source, context) ?? shareProblem(guarded.share, context);
+
+  if (problem !== undefined) {
+    throw pathRefusal(key, hints.refused, written, problem);
+  }
+
+  const root = overlapping(
+    source,
+    context.roots.map((path) => realOf(path, context.home)),
+  );
+
+  if (root !== undefined) {
+    throw new LauncherError(
+      `config: ${key}: ${printable(written)} overlaps ${printable(root)}, which the sandbox already mounts`,
+      hints.overlap,
+    );
+  }
+};
 
 const hostBind = (entry: BindEntry, index: number, context: BindContext): HostBind => {
   const key = keyOf(index);
@@ -43,29 +91,31 @@ const hostBind = (entry: BindEntry, index: number, context: BindContext): HostBi
 
   const directory = stats.isDirectory();
   const share = directory ? source : dirname(source);
-  const problem = shareProblem(source, context) ?? shareProblem(share, context);
 
-  if (problem !== undefined) {
-    throw pathRefusal(key, BIND_HINT, entry.source, problem);
-  }
-
-  const root = overlapping(
-    source,
-    context.roots.map((path) => realOf(path, context.home)),
-  );
-
-  if (root !== undefined) {
-    throw new LauncherError(
-      `config: ${key}: ${printable(entry.source)} overlaps ${printable(root)}, which the sandbox already mounts`,
-      "bind a folder or file apart from the folders the sandbox already mounts",
-    );
-  }
+  guardSource({ key, written: entry.source, source, share }, BIND_HINTS, context);
 
   return { key, source, target: entry.target, share, directory };
 };
 
 export const hostBinds = (binds: BindEntry[], context: BindContext) =>
   binds.map((entry, index) => hostBind(entry, index, context));
+
+const volumeSource = (written: string, index: number, context: BindContext): VolumeSource => {
+  const requested = resolve(expandHome(written, context.home));
+  const source = realOrResolvedSync(requested);
+  const key = `mounts.volumes[${index}].source`;
+
+  guardSource({ key, written, source, share: source }, VOLUME_SOURCE_HINTS, context);
+
+  return { index, written, requested, source };
+};
+
+export const hostVolumeSources = (volumes: Array<string | { source?: string }>, context: BindContext) =>
+  volumes.flatMap((entry, index) =>
+    typeof entry === "string" || entry.source === undefined
+      ? []
+      : [volumeSource(entry.source, index, context)],
+  );
 
 const unchanged = (bind: HostBind) => {
   const stats = lstatSync(bind.source, { throwIfNoEntry: false });

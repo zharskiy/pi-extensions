@@ -1,32 +1,21 @@
 import { stat } from "node:fs/promises";
 import { dirname } from "node:path";
-import {
-  type Backend,
-  type ContainerSummary,
-  isSession,
-  LABELS,
-  roleOf,
-  type VolumeSummary,
-} from "../backend/index.ts";
+import { type Backend, type ContainerSummary, isSession, LABELS, roleOf } from "../backend/index.ts";
 import { discardContainer, listLauncherContainers } from "../container/index.ts";
 import { type Launch, launchState, pruneLaunches, withLaunchLock } from "../grants/index.ts";
 import { collectImages, removeBuildLeftovers } from "../image/index.ts";
 import {
   errorMessage,
   forgetRepo,
-  hasRepoLeftovers,
   isMounted,
   knownRepos,
   type RepoRecord,
-  readCreatedDirs,
   readJsonObject,
   repoRecordOf,
   shortHash,
   stateLayout,
-  writeCreatedDirs,
   writeJsonFile,
 } from "../shared/index.ts";
-import { removeCreatedDirs } from "../workspace/index.ts";
 import { type CliDeps, pathsOf, writeLine } from "./deps.ts";
 import { stopIdleGround } from "./ground.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
@@ -89,13 +78,6 @@ const clearEngine = async (deps: CliDeps, repoHash: string, backend?: Backend) =
 export const removeRepoSandbox = async (deps: CliDeps, repoHash: string, backend?: Backend) => {
   const stateDir = pathsOf(deps).stateDir;
   const cleared = await clearEngine(deps, repoHash, backend);
-
-  await writeCreatedDirs(
-    stateDir,
-    repoHash,
-    await removeCreatedDirs(await readCreatedDirs(stateDir, repoHash)),
-  );
-
   const root = (await repoRecordOf(stateDir, repoHash))?.root;
 
   if (root !== undefined) {
@@ -142,9 +124,8 @@ const sweepRepo = async (deps: CliDeps, sweep: RepoSweep, backend?: Backend) => 
   const record = await repoRecordOf(stateDir, repoHash);
   const state = await rootState(record);
   const gone = state === "gone";
-  const leftovers = inEngine || (await hasRepoLeftovers(stateDir, repoHash));
 
-  if (state === "unreachable" || (!leftovers && !gone && launches.dead.length === 0)) {
+  if (state === "unreachable" || (!inEngine && !gone && launches.dead.length === 0)) {
     return [];
   }
 
@@ -153,7 +134,7 @@ const sweepRepo = async (deps: CliDeps, sweep: RepoSweep, backend?: Backend) => 
       return [];
     }
 
-    const lines = leftovers ? await removeRepoSandbox(deps, repoHash, backend) : [];
+    const lines = inEngine ? await removeRepoSandbox(deps, repoHash, backend) : [];
 
     const forget =
       record === undefined ? inEngine && (await repoRecordOf(stateDir, repoHash)) === undefined : gone;
@@ -187,39 +168,6 @@ const engineObjects = async (engine: Backend | undefined) => {
   return { agents, hashes: containers.flatMap(repoHashOf) };
 };
 
-const removedVolume = (backend: Backend, name: string) =>
-  backend.removeVolume(name).then(
-    () => [`removed volume ${name}`],
-    () => [],
-  );
-
-const volumeRecord = async (stateDir: string, volume: VolumeSummary, root: string): Promise<RepoRecord> => {
-  const hash = volume.labels[LABELS.repoHash];
-  const record = hash === undefined ? undefined : await repoRecordOf(stateDir, hash);
-
-  return record?.root === root ? record : { root };
-};
-
-const orphaned = async (stateDir: string, volume: VolumeSummary) => {
-  const root = volume.labels[LABELS.repoRoot];
-
-  return (
-    root !== undefined &&
-    !volume.inUse &&
-    (await rootState(await volumeRecord(stateDir, volume, root))) === "gone"
-  );
-};
-
-const pruneVolumes = async (stateDir: string, backend: Backend) => {
-  const volumes = await backend.listVolumes();
-  const verdicts = await Promise.all(volumes.map((volume) => orphaned(stateDir, volume)));
-  const removed = await Promise.all(
-    volumes.filter((_volume, index) => verdicts[index]).map((volume) => removedVolume(backend, volume.name)),
-  );
-
-  return removed.flat();
-};
-
 const gcDue = async (deps: CliDeps) => {
   const record = await readJsonObject(stateLayout(pathsOf(deps).stateDir).gcRecord);
   const lastRun = typeof record?.lastRun === "number" ? record.lastRun : 0;
@@ -235,12 +183,11 @@ const collectGarbage = async (deps: CliDeps, backend: Backend | undefined) => {
     return [];
   }
 
-  const volumes = await pruneVolumes(stateDir, engine);
   const images = await collectImages(engine, stateDir);
 
   await writeJsonFile(stateLayout(stateDir).gcRecord, { lastRun: deps.now() });
 
-  return [...volumes, ...images.map((image) => `removed image ${image}`)];
+  return images.map((image) => `removed image ${image}`);
 };
 
 const sweepGround = async (deps: CliDeps, backend: Backend | undefined, signal?: AbortSignal) => {

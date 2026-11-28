@@ -46,7 +46,7 @@ const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const HEADER = /^[A-Za-z0-9-]+$/;
 
-const DIGEST = /^sha256:[0-9a-f]{64}$/;
+const PINNED_IMAGE = /^[^@\s]+@sha256:[0-9a-f]{64}$/;
 
 const FINGERPRINT = /^([0-9A-Fa-f]:?){63}[0-9A-Fa-f]$/;
 
@@ -160,7 +160,10 @@ const httpsUrl: Check = (value) =>
 
 const header: Check = (value) => (HEADER.test(value) ? undefined : "must be a header name");
 
-const digest: Check = (value) => (DIGEST.test(value) ? undefined : "must look like sha256:<64 hex digits>");
+const pinnedImage: Check = (value) =>
+  PINNED_IMAGE.test(value)
+    ? undefined
+    : "must carry the digest it is pulled by, as name@sha256:<64 hex digits>";
 
 const fingerprint: Check = (value) =>
   FINGERPRINT.test(value) ? undefined : "must be 64 hex digits, colons optional";
@@ -202,11 +205,6 @@ const firstNested = (paths: string[]) =>
 
 const uniqueIds: ListCheck = (value) =>
   firstDuplicate(value.map((item) => fieldOf(item, "id"))) === undefined ? undefined : "has a duplicate id";
-
-const pinnedReference: ObjectCheck = (value) =>
-  (value.reference === undefined) !== (value.digest === undefined)
-    ? "sets reference and digest only together: the image is pulled by its digest, or built here without either"
-    : undefined;
 
 const ruleMode: ObjectCheck = (value) => {
   if (value.placeholder === undefined && value.header === undefined) {
@@ -486,7 +484,10 @@ const excludedAndAdded: ObjectCheck = (value) => {
   return clash === undefined ? undefined : `excludes and adds ${clash[1]} of ${clash[0]}`;
 };
 
-const VOLUME = shape({ target: namedText(guestTarget), name: text(volumeName) }, ["target"]);
+const VOLUME = shape(
+  { target: namedText(guestTarget), name: text(volumeName), source: namedText(absolutePath) },
+  ["target"],
+);
 
 const volumeAt = (value: unknown, path: string): Problem | undefined =>
   typeof value === "string" ? at(path, named(value, guestTarget(value))) : problemOf(VOLUME, value, path);
@@ -753,16 +754,12 @@ const CONFIG_SPEC: ObjectSpec = {
   check: configCheck,
   properties: {
     $schema: text(),
-    image: {
-      ...shape({
-        reference: text(nonEmpty),
-        digest: text(digest),
-        packages: namedList(aptPackage),
-        npmGlobal: list(npmPackage),
-        dockerfile: namedText(absolutePath),
-      }),
-      check: pinnedReference,
-    },
+    image: shape({
+      reference: text(pinnedImage),
+      packages: namedList(aptPackage),
+      npmGlobal: list(npmPackage),
+      dockerfile: namedText(absolutePath),
+    }),
     credentials: shape({
       rules: { type: "array", items: CREDENTIAL_RULE, check: uniqueIds },
       derive: shape({ enabled: flag, hosts: list(hostPattern) }),
@@ -782,7 +779,6 @@ const CONFIG_SPEC: ObjectSpec = {
           check: distinctVolumeNames,
         },
         binds: { type: "array", items: BIND },
-        autoOverlays: flag,
       }),
       check: apartTargets,
     },

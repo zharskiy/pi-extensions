@@ -329,7 +329,7 @@ describe("the ground lock and the install-wide services", () => {
     const harness = await createHarness({
       backend: () => ({
         ...fake.backend,
-        listVolumes: () => Promise.reject(new Error("engine broke")),
+        listImages: () => Promise.reject(new Error("engine broke")),
       }),
     });
 

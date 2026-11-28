@@ -4,9 +4,6 @@ export interface Workspace {
   gitDir?: string;
   gitCommonDir?: string;
   isGitRepo: boolean;
-  overlays?: string[];
-  overlaysCapped?: boolean;
-  overlaysTruncated?: boolean;
 }
 
 export const gitDirsOf = (workspace: Workspace) => [
