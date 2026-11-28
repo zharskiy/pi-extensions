@@ -1395,18 +1395,18 @@ describe("pinata doctor on the host pi", () => {
 
   it("names pi's managed install, with the home shown as ~, and says the sandbox runs the same version", async () => {
     const { found } = await hostPiCheck(async (harness) => {
-      await writeManagedPi(harness.hostAgentDir, "1.6.0");
+      await writeManagedPi(harness.hostAgentDir, await testedPiVersion());
     });
 
     expect(found).toMatchObject({
       status: "ok",
-      detail: "1.6.0 at ~/.pi/agent/bin/pi; the sandbox runs the same version",
+      detail: `${await testedPiVersion()} at ~/.pi/agent/bin/pi; the sandbox runs the same version`,
     });
   });
 
   it("says the sandbox image is pinned when image.reference is set", async () => {
     const { found } = await hostPiCheck(async (harness) => {
-      await writeManagedPi(harness.hostAgentDir, "1.6.0");
+      await writeManagedPi(harness.hostAgentDir, await testedPiVersion());
       await harness.writeJson(harness.userConfigFile, {
         image: { reference: `registry.example.test/pi:1@sha256:${"b".repeat(64)}` },
       });
@@ -1414,7 +1414,7 @@ describe("pinata doctor on the host pi", () => {
 
     expect(found).toMatchObject({
       status: "ok",
-      detail: "1.6.0 at ~/.pi/agent/bin/pi; the sandbox image is pinned by image.reference",
+      detail: `${await testedPiVersion()} at ~/.pi/agent/bin/pi; the sandbox image is pinned by image.reference`,
     });
   });
 
@@ -1432,13 +1432,14 @@ describe("pinata doctor on the host pi", () => {
 
   it("names an npm global install when there is no managed install", async () => {
     const { found } = await hostPiCheck(async (harness) => {
-      harness.deps.env.PATH = (await writeNpmPi(join(harness.deps.home, "npm-global"), "1.6.0")).bin;
+      harness.deps.env.PATH = (
+        await writeNpmPi(join(harness.deps.home, "npm-global"), await testedPiVersion())
+      ).bin;
     }, false);
 
     expect(found).toMatchObject({
       status: "ok",
-      detail:
-        "1.6.0 at ~/npm-global/lib/node_modules/@earendil-works/pi-coding-agent; the sandbox runs the same version",
+      detail: `${await testedPiVersion()} at ~/npm-global/lib/node_modules/@earendil-works/pi-coding-agent; the sandbox runs the same version`,
     });
   });
 
