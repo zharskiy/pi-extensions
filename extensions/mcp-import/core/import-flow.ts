@@ -32,13 +32,15 @@ type Scan =
 
 type Prepared = { found: Found; pair?: Pair; problem?: string };
 
-type Places = { home: string; cwd: string; agentDir: string };
+type Places = { home: string; cwd: string; agentDir: string; codexHome: string };
 
 const PAIRS: readonly { source: Source; scope: SettingsScope }[] = [
   { source: "claude", scope: "user" },
   { source: "claude", scope: "project" },
   { source: "cursor", scope: "user" },
   { source: "cursor", scope: "project" },
+  { source: "codex", scope: "user" },
+  { source: "codex", scope: "project" },
 ];
 
 const hasServers = (found: Found) => found.origins.some((origin) => Object.keys(origin.servers).length > 0);
@@ -48,9 +50,9 @@ const fixFirst = (error: string) => `${error}; fix it first, nothing written`;
 export const prepareImport = (
   source: Source,
   scope: SettingsScope,
-  { home, cwd, agentDir }: Places,
+  { home, cwd, agentDir, codexHome }: Places,
 ): Prepared => {
-  const found = findServers(source, scope, { home, cwd });
+  const found = findServers(source, scope, { home, cwd, codexHome });
 
   if (!hasServers(found)) {
     return { found };
@@ -75,7 +77,11 @@ export const prepareImport = (
   return { found, pair: { source, scope, found, plan, path, target, text } };
 };
 
-export const writeImport = (pair: Pair, text: string | undefined, places: Omit<Places, "home">) => {
+export const writeImport = (
+  pair: Pair,
+  text: string | undefined,
+  places: Pick<Places, "cwd" | "agentDir">,
+) => {
   if (text === undefined) {
     return undefined;
   }

@@ -2,7 +2,7 @@
 
 # mcp-import
 
-**Copies MCP servers from Claude Code or Cursor into pi's `mcp.json`.**
+**Copies MCP servers from Claude Code, Cursor or Codex into pi's `mcp.json`.**
 
 Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
@@ -10,7 +10,7 @@ Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development
 
 ## Why
 
-Pi reads MCP servers from its own `mcp.json`, not from Claude Code's or Cursor's files. This extension reads them from either tool, at user or project scope. It converts them to pi's shape and adds them. It never overwrites a server you already have. For Claude Code at project scope it also finds the project under its real path when the working directory is a symlink.
+Pi reads MCP servers from its own `mcp.json`, not from Claude Code's, Cursor's or Codex's files. This extension reads them from any of the three, at user or project scope. It converts them to pi's shape and adds them. It never overwrites a server you already have. For Claude Code at project scope it also finds the project under its real path when the working directory is a symlink.
 
 ## What it looks like
 
@@ -55,6 +55,9 @@ Start with a dry run, then write:
 
 - Claude Code: `~/.claude.json`. For a project, its entry in `~/.claude.json` and `<cwd>/.mcp.json`.
 - Cursor: `~/.cursor/mcp.json`. For a project, `<cwd>/.cursor/mcp.json`.
+- Codex: `config.toml` in `$CODEX_HOME` (`~/.codex` when unset). For a project, `<cwd>/.codex/config.toml`, the working directory only. Profiles and plugins are not read.
+
+From Codex it converts `command`, `args`, `cwd`, `env`, `url`, `http_headers`, `env_http_headers` and `bearer_token_env_var` (as `Authorization: Bearer ${NAME}`), `enabled = false`, `tool_timeout_sec`, `enabled_tools` and `disabled_tools` (as `toolExposure`) and the OAuth `client_id`, `callback_port` and `scopes`. Codex leaves out an `env_http_headers` header while its variable is unset, but pi fails to connect, so set the variables. A `$` or leading `!` in an `env` or header value is escaped, since Codex reads them as literal text and pi does not. Every other field, `env_vars` and the OAuth client secret among them, is dropped with a note.
 
 A user write goes to `~/.pi/agent/mcp.json`, a project write to `.pi/mcp.json`, the files pi reads. A project write creates `.pi/` when needed, with a `.pi/.gitignore` (`*`) that keeps it out of git; delete that file to track `.pi/`. A `.pi/` that already exists is left as it is.
 

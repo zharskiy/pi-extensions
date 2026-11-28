@@ -6,7 +6,11 @@ import { needsSignIn } from "../core/convert.ts";
 import type { Pair } from "../core/import-flow.ts";
 import type { Entry, Plan } from "../core/plan.ts";
 
-const SOURCE_NAMES: Record<Source, string> = { claude: "Claude Code", cursor: "Cursor" };
+const SOURCE_NAMES: Record<Source, string> = {
+  claude: "Claude Code",
+  cursor: "Cursor",
+  codex: "Codex",
+};
 
 const SCOPE_NAMES: Record<SettingsScope, string> = { user: "user", project: "this project" };
 

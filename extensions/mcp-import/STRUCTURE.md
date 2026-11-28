@@ -8,8 +8,8 @@ extensions/mcp-import/
 │   └── plugin.ts            mcpImportPlugin, createMcpImport: /mcp-import command, dry run, apply, interactive pick, notices
 ├── core/
 │   ├── args.ts              argument parsing, completion, usage (the scope is the shared `SettingsScope`)
-│   ├── sources.ts           finds and reads Claude Code and Cursor files per scope (`findServers` only)
-│   ├── convert.ts           one entry to pi's shape, with notes and skip reasons
+│   ├── sources.ts           finds and reads Claude Code, Cursor (JSON) and Codex (TOML) files per scope (`findServers` only)
+│   ├── convert.ts           one entry to pi's shape, with notes and skip reasons (one converter per source)
 │   ├── plan.ts              merges converted entries into the target text without overwriting
 │   └── import-flow.ts       prepare a pair, survey and scan all pairs, narrow to the picked servers, write the target (a new `.pi/` gets its `.gitignore`)
 ├── ui/
@@ -20,7 +20,7 @@ extensions/mcp-import/
 │   ├── convert.test.ts      entry conversion
 │   ├── plan.test.ts         merging into the target
 │   ├── sources.test.ts      reading the source files
-│   └── mcp-import.test.ts   the command on a fake host: dry run, apply, interactive pick (keys carry `shortcut`), `.pi/.gitignore`, a `.pi` that is a file
+│   └── mcp-import.test.ts   the command on a fake host: dry run, apply, a given Codex home, interactive pick (keys carry `shortcut`), `.pi/.gitignore`, a `.pi` that is a file
 ├── README.md                user guide
 ├── ARCHITECTURE.md          runtime behaviour
 └── STRUCTURE.md             this file map

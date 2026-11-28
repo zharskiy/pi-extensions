@@ -7,6 +7,8 @@ const claude = (raw: unknown) => convertServer("claude", raw, context);
 
 const cursor = (raw: unknown) => convertServer("cursor", raw, context);
 
+const codex = (raw: unknown) => convertServer("codex", raw, context);
+
 describe("Claude Code entries", () => {
   it("copies a stdio entry unchanged", () => {
     expect(claude({ type: "stdio", command: "npx", args: ["-y", "srv"], env: { A: "${A}" } })).toEqual({
@@ -128,6 +130,117 @@ describe("Cursor entries", () => {
   it("does not apply Claude's default syntax rule", () => {
     expect(cursor({ command: "srv", env: { A: "${A:-b}" } })).toMatchObject({
       server: { env: { A: "${A:-b}" } },
+    });
+  });
+});
+
+describe("Codex entries", () => {
+  it("copies a stdio entry", () => {
+    expect(codex({ command: "npx", args: ["-y", "srv"], cwd: "/work", env: { A: "b" } })).toEqual({
+      server: { command: "npx", args: ["-y", "srv"], cwd: "/work", env: { A: "b" } },
+      notes: [],
+    });
+  });
+
+  it("builds the headers from http_headers, env_http_headers and bearer_token_env_var, later ones winning", () => {
+    const result = codex({
+      url: "https://x.test/mcp",
+      http_headers: { "X-Client": "pinata", Authorization: "Basic x" },
+      env_http_headers: { "X-Api-Key": "API_KEY", "X-Client": "CLIENT" },
+      bearer_token_env_var: "TOKEN",
+    });
+
+    expect(result).toEqual({
+      server: {
+        url: "https://x.test/mcp",
+        headers: { "X-Client": "${CLIENT}", Authorization: "Bearer ${TOKEN}", "X-Api-Key": "${API_KEY}" },
+      },
+      notes: [
+        "env_http_headers became ${VAR} headers; pi fails to connect while a variable is unset, Codex left the header out",
+      ],
+    });
+  });
+
+  it("keeps literal $ and a leading ! in env and header values", () => {
+    expect(codex({ command: "srv", env: { PASS: "!a$b", PATHS: "${X}" } })).toEqual({
+      server: { command: "srv", env: { PASS: "$!a$$b", PATHS: "$${X}" } },
+      notes: [
+        'env.PASS contains "$", which pi would read as a variable; written as "$$" to keep it literal',
+        'env.PATHS contains "$", which pi would read as a variable; written as "$$" to keep it literal',
+        'env.PASS starts with "!", which pi would run as a command; written as "$!..." to keep it literal',
+      ],
+    });
+    expect(codex({ url: "https://x.test/mcp", http_headers: { X: "a$b" } })).toMatchObject({
+      server: { headers: { X: "a$$b" } },
+    });
+    expect(codex({ command: "$srv", args: ["$A"] })).toEqual({
+      server: { command: "$srv", args: ["$A"] },
+      notes: [],
+    });
+    expect(codex({ url: "https://x.test/$mcp" })).toEqual({
+      server: { url: "https://x.test/$mcp" },
+      notes: [],
+    });
+  });
+
+  it("copies enabled = false and the tool timeout in whole seconds", () => {
+    expect(codex({ command: "srv", enabled: false, tool_timeout_sec: 90.5 })).toEqual({
+      server: { command: "srv", enabled: false, timeout: 91 },
+      notes: [],
+    });
+    expect(codex({ command: "srv", enabled: true })).toEqual({ server: { command: "srv" }, notes: [] });
+  });
+
+  it("hides every tool but enabled_tools, then hides disabled_tools", () => {
+    expect(codex({ command: "srv", enabled_tools: ["a", "b"], disabled_tools: ["b"] })).toMatchObject({
+      server: { toolExposure: { "*": "hidden", a: "codemode", b: "hidden" } },
+    });
+    expect(codex({ command: "srv", disabled_tools: ["c"] })).toMatchObject({
+      server: { toolExposure: { c: "hidden" } },
+    });
+  });
+
+  it("keeps the OAuth client id, callback port and scopes and drops the other OAuth keys", () => {
+    const result = codex({
+      url: "https://x.test/mcp",
+      scopes: ["read", "write"],
+      oauth: { client_id: "id", callback_port: 8765, client_secret: "s" },
+    });
+
+    expect(result).toEqual({
+      server: {
+        url: "https://x.test/mcp",
+        oauth: { clientId: "id", callbackPort: 8765, scope: "read write" },
+      },
+      notes: ["dropped oauth client_secret: pi has no such field"],
+    });
+  });
+
+  it("drops env_vars with a note", () => {
+    expect(codex({ command: "srv", env_vars: ["API_KEY"] })).toEqual({
+      server: { command: "srv" },
+      notes: ["dropped env_vars: pi passes its whole environment to stdio servers"],
+    });
+  });
+
+  it("reads an entry with both command and url as stdio and drops the url", () => {
+    expect(codex({ command: "srv", url: "https://x.test/mcp" })).toEqual({
+      server: { command: "srv" },
+      notes: ["dropped url: pi has no such field"],
+    });
+  });
+
+  it("skips an entry without command or url and one with malformed fields", () => {
+    expect(codex({ enabled: true })).toEqual({ skip: expect.stringMatching(/needs "command"/) });
+    expect(codex({ command: "x", args: [1] })).toEqual({ skip: "has args that are not a list of strings" });
+  });
+
+  it("drops every other field, type included, with a note", () => {
+    expect(
+      codex({ type: "sse", url: "https://x.test/mcp", http_headers_helper: "h", startup_timeout_sec: 5 }),
+    ).toEqual({
+      server: { url: "https://x.test/mcp" },
+      notes: ["dropped type, http_headers_helper, startup_timeout_sec: pi has no such field"],
     });
   });
 });

@@ -88,6 +88,24 @@ describe("import plan", () => {
     expect(plan.skipped.map((skip) => skip.name)).toEqual(["bad name", "old"]);
   });
 
+  it("skips a Codex name pi cannot use next to one it adds", () => {
+    const plan = planImport(
+      "codex",
+      [{ label: "~/.codex/config.toml", servers: { "a.b": { command: "x" }, ok: { command: "y" } } }],
+      target(),
+      context,
+    );
+
+    expect(plan.added.map((entry) => entry.name)).toEqual(["ok"]);
+    expect(plan.skipped).toEqual([
+      {
+        name: "a.b",
+        origin: "~/.codex/config.toml",
+        reason: "pi server names use only letters, digits, _ and -",
+      },
+    ]);
+  });
+
   it("refuses a target file that is not a valid mcp.json", () => {
     expect(planImport("claude", [], target("{"), context).error).toMatch(/^mcp\.json: /);
     expect(planImport("claude", [], target('{"mcpServers":[]}'), context).error).toMatch(

@@ -1,23 +1,41 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { errorText, isPlainObject, type SettingsScope } from "../../../platform/shared/index.ts";
+import { parse, TomlError } from "smol-toml";
+import {
+  errorText,
+  homeRelative,
+  isPlainObject,
+  type SettingsScope,
+} from "../../../platform/shared/index.ts";
 import type { Source } from "./args.ts";
 
 export type Origin = { label: string; servers: Record<string, unknown>; note?: string };
 
 export type Found = { origins: Origin[]; checked: string[]; problems: string[] };
 
-type Places = { home: string; cwd: string };
+type Places = { home: string; cwd: string; codexHome: string };
 
 type Read = { data?: unknown; problem?: string };
 
-const readJson = (path: string): Read => {
+const parseToml = (text: string) => {
+  try {
+    return parse(text);
+  } catch (error) {
+    if (error instanceof TomlError) {
+      throw new Error(`invalid TOML at line ${error.line}, column ${error.column}`);
+    }
+
+    throw error;
+  }
+};
+
+const readConfig = (path: string, parseText: (text: string) => unknown): Read => {
   if (!existsSync(path)) {
     return {};
   }
 
   try {
-    return { data: JSON.parse(readFileSync(path, "utf8")) };
+    return { data: parseText(readFileSync(path, "utf8")) };
   } catch (error) {
     return { problem: `cannot read ${path}: ${errorText(error)}` };
   }
@@ -33,6 +51,14 @@ const serversOf = (data: unknown): Record<string, unknown> | string => {
   }
 
   return isPlainObject(data.mcpServers) ? data.mcpServers : 'expected "mcpServers" to be an object';
+};
+
+const codexServers = (data: unknown): Record<string, unknown> | string => {
+  if (!isPlainObject(data) || data.mcp_servers === undefined) {
+    return {};
+  }
+
+  return isPlainObject(data.mcp_servers) ? data.mcp_servers : 'expected "mcp_servers" to be a table';
 };
 
 const claudeLocalServers = (data: unknown, dirs: readonly string[]): Record<string, unknown> | string => {
@@ -57,6 +83,7 @@ const projectDirs = (cwd: string) => {
 type Spec = {
   label: string;
   path: string;
+  parse?: (text: string) => unknown;
   servers: (data: unknown) => Record<string, unknown> | string;
   note?: string;
 };
@@ -64,7 +91,7 @@ type Spec = {
 const LOCAL_NOTE =
   "comes from your private Claude local scope; .pi/mcp.json may be committed, so check it for credentials";
 
-const specsFor = (source: Source, scope: SettingsScope, { home, cwd }: Places): Spec[] => {
+const specsFor = (source: Source, scope: SettingsScope, { home, cwd, codexHome }: Places): Spec[] => {
   const claudeJson = join(home, ".claude.json");
 
   if (source === "claude" && scope === "user") {
@@ -83,6 +110,20 @@ const specsFor = (source: Source, scope: SettingsScope, { home, cwd }: Places): 
     ];
   }
 
+  if (source === "codex") {
+    const user = scope === "user";
+    const path = user ? join(codexHome, "config.toml") : join(cwd, ".codex", "config.toml");
+
+    return [
+      {
+        label: user ? homeRelative(path, home) : ".codex/config.toml",
+        path,
+        parse: parseToml,
+        servers: codexServers,
+      },
+    ];
+  }
+
   return scope === "user"
     ? [{ label: "~/.cursor/mcp.json", path: join(home, ".cursor", "mcp.json"), servers: serversOf }]
     : [{ label: ".cursor/mcp.json", path: join(cwd, ".cursor", "mcp.json"), servers: serversOf }];
@@ -90,7 +131,7 @@ const specsFor = (source: Source, scope: SettingsScope, { home, cwd }: Places): 
 
 export const findServers = (source: Source, scope: SettingsScope, places: Places): Found => {
   const specs = specsFor(source, scope, places);
-  const reads = specs.map((spec) => ({ spec, read: readJson(spec.path) }));
+  const reads = specs.map((spec) => ({ spec, read: readConfig(spec.path, spec.parse ?? JSON.parse) }));
 
   const parsed = reads
     .filter(({ read }) => read.data !== undefined)

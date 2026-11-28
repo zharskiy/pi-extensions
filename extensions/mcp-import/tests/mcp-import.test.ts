@@ -12,6 +12,9 @@ type Setup = {
   mcpJson?: unknown;
   cursorUser?: unknown;
   cursorProject?: unknown;
+  codexUser?: string;
+  codexProject?: string;
+  codexHome?: string;
   existing?: unknown;
   projectTrusted?: boolean;
   mode?: "tui" | "rpc";
@@ -22,6 +25,9 @@ const setup = ({
   mcpJson,
   cursorUser,
   cursorProject,
+  codexUser,
+  codexProject,
+  codexHome,
   existing,
   projectTrusted = true,
   mode = "tui",
@@ -30,6 +36,7 @@ const setup = ({
   const home = join(root, "home");
   const agentDir = join(home, ".pi", "agent");
   const cwd = join(root, "project");
+  const codexDir = codexHome ?? join(home, ".codex");
 
   mkdirSync(home, { recursive: true });
   mkdirSync(join(cwd, ".cursor"), { recursive: true });
@@ -51,6 +58,16 @@ const setup = ({
     writeFileSync(join(cwd, ".cursor", "mcp.json"), JSON.stringify(cursorProject));
   }
 
+  if (codexUser !== undefined) {
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(join(codexDir, "config.toml"), codexUser);
+  }
+
+  if (codexProject !== undefined) {
+    mkdirSync(join(cwd, ".codex"), { recursive: true });
+    writeFileSync(join(cwd, ".codex", "config.toml"), codexProject);
+  }
+
   if (existing !== undefined) {
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(join(agentDir, "mcp.json"), JSON.stringify(existing));
@@ -58,7 +75,7 @@ const setup = ({
 
   const host = createFakeHost({ agentDir, cwd, projectTrusted, mode });
 
-  createMcpImport(host, home);
+  createMcpImport(host, home, codexDir);
   host.start();
 
   return { host, userFile: join(agentDir, "mcp.json"), projectFile: join(cwd, ".pi", "mcp.json") };
@@ -150,6 +167,35 @@ describe("/mcp-import", () => {
     expect(readJson(projectFile)).toEqual({ mcpServers: { other: { command: "~/srv" } } });
   });
 
+  it("dry-runs Codex's user file", async () => {
+    const { host, userFile } = setup({ codexUser: '[mcp_servers.docs]\nurl = "https://x.test/mcp"\n' });
+
+    await host.runCommand("mcp-import", "codex");
+
+    expect(existsSync(userFile)).toBe(false);
+    expect(host.notices[0].message).toContain("pi-mcp-import: dry run of /mcp-import codex, nothing written");
+    expect(host.notices[0].message).toContain("read: ~/.codex/config.toml");
+  });
+
+  it("imports Codex's project file", async () => {
+    const { host, projectFile } = setup({
+      codexProject: '[mcp_servers.tool]\ncommand = "tool"\nenv = { A = "b" }\n',
+    });
+
+    await host.runCommand("mcp-import", "codex project apply");
+
+    expect(readJson(projectFile)).toEqual({ mcpServers: { tool: { command: "tool", env: { A: "b" } } } });
+  });
+
+  it("reads Codex's user file from the Codex home it is given", async () => {
+    const codexHome = join(temp.make("pi-codex-home-"), "codex");
+    const { host, userFile } = setup({ codexHome, codexUser: '[mcp_servers.tool]\ncommand = "tool"\n' });
+
+    await host.runCommand("mcp-import", "codex apply");
+
+    expect(readJson(userFile)).toEqual({ mcpServers: { tool: { command: "tool" } } });
+  });
+
   it("refuses to write a project file in an untrusted project", async () => {
     const { host, projectFile } = setup({
       mcpJson: { mcpServers: { tool: { command: "tool" } } },
@@ -168,10 +214,15 @@ describe("/mcp-import", () => {
     const { host } = setup();
 
     await host.runCommand("mcp-import", "cursor");
+    await host.runCommand("mcp-import", "codex");
 
     expect(host.notices).toEqual([
       {
         message: "pi-mcp-import: /mcp-import cursor found no MCP servers in ~/.cursor/mcp.json",
+        level: "info",
+      },
+      {
+        message: "pi-mcp-import: /mcp-import codex found no MCP servers in ~/.codex/config.toml",
         level: "info",
       },
     ]);
@@ -192,10 +243,10 @@ describe("/mcp-import", () => {
   it("reports bad arguments with the usage", async () => {
     const { host } = setup();
 
-    await host.runCommand("mcp-import", "codex");
+    await host.runCommand("mcp-import", "vscode");
 
     expect(host.notices).toEqual([
-      { message: expect.stringMatching(/^pi-mcp-import: unknown tool "codex".*usage: /), level: "error" },
+      { message: expect.stringMatching(/^pi-mcp-import: unknown tool "vscode".*usage: /), level: "error" },
     ]);
   });
 });
@@ -256,6 +307,20 @@ describe("/mcp-import without arguments", () => {
       /^pi-mcp-import: added 2 servers to ~\/\.pi\/agent\/mcp\.json: github, docs\n/,
     );
     expect(host.notices[0].message).toContain("run /reload to connect them, then /mcp to check them");
+  });
+
+  it("offers Codex as a source", async () => {
+    const { host } = setup({
+      claude: { mcpServers: { github: GITHUB } },
+      codexUser: '[mcp_servers.linear]\ncommand = "linear-mcp"\n',
+    });
+
+    const running = host.runCommand("mcp-import");
+
+    expect(line(host.form().render(120), "Codex · user")).toContain("1 new: linear → ~/.pi/agent/mcp.json");
+
+    host.form().press(ESCAPE);
+    await running;
   });
 
   it("writes only the checked servers and lists the others as not selected", async () => {
@@ -411,7 +476,7 @@ describe("/mcp-import without arguments", () => {
     expect(host.notices).toEqual([
       {
         message:
-          "pi-mcp-import: found no MCP servers to import in ~/.claude.json (user scope), ~/.claude.json (local scope of this project), .mcp.json, ~/.cursor/mcp.json, .cursor/mcp.json",
+          "pi-mcp-import: found no MCP servers to import in ~/.claude.json (user scope), ~/.claude.json (local scope of this project), .mcp.json, ~/.cursor/mcp.json, .cursor/mcp.json, ~/.codex/config.toml, .codex/config.toml",
         level: "info",
       },
     ]);

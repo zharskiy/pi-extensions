@@ -1,4 +1,4 @@
-import { isPlainObject, isStringArray } from "../../../platform/shared/index.ts";
+import { isFiniteNumber, isPlainObject, isStringArray } from "../../../platform/shared/index.ts";
 import type { Source } from "./args.ts";
 
 type RawServer = Record<string, unknown>;
@@ -29,6 +29,20 @@ const CLAUDE_KEYS = [
 ];
 
 const CURSOR_KEYS = ["type", "command", "args", "env", "cwd", "url", "headers", "envFile", "auth"];
+
+const CODEX_KEYS = ["enabled", "tool_timeout_sec", "enabled_tools", "disabled_tools"];
+
+const CODEX_STDIO_KEYS = [...CODEX_KEYS, "command", "args", "env", "cwd", "env_vars"];
+
+const CODEX_HTTP_KEYS = [
+  ...CODEX_KEYS,
+  "url",
+  "http_headers",
+  "env_http_headers",
+  "bearer_token_env_var",
+  "oauth",
+  "scopes",
+];
 
 const OAUTH_KEYS = ["clientId", "callbackPort", "authServerMetadataUrl", "scope"];
 
@@ -184,11 +198,11 @@ const warnUnexpanded = (server: PiServer, notes: string[]) => {
   }
 };
 
-const dropUnknown = (raw: RawServer, known: string[], notes: string[]) => {
+const dropUnknown = (raw: RawServer, known: string[], notes: string[], prefix = "") => {
   const unknownKeys = Object.keys(raw).filter((key) => !known.includes(key));
 
   if (unknownKeys.length > 0) {
-    notes.push(`dropped ${unknownKeys.join(", ")}: pi has no such field`);
+    notes.push(`dropped ${prefix}${unknownKeys.join(", ")}: pi has no such field`);
   }
 };
 
@@ -327,9 +341,115 @@ const convertCursor = (raw: RawServer, notes: string[], context: ConvertContext)
   return { server: picked, notes };
 };
 
+const codexShape = (raw: RawServer): RawServer =>
+  typeof raw.command === "string"
+    ? { command: raw.command, args: raw.args, env: raw.env, cwd: raw.cwd }
+    : { url: raw.url, headers: raw.http_headers };
+
+const keepDollars = (server: PiServer, notes: string[]) => {
+  mapStrings(server, (field, value) => {
+    if (!/^(env|headers)\./.test(field) || !value.includes("$")) {
+      return value;
+    }
+
+    notes.push(
+      `${field} contains "$", which pi would read as a variable; written as "$$" to keep it literal`,
+    );
+    return value.split("$").join("$$");
+  });
+};
+
+const codexHeaders = (raw: RawServer, server: PiServer, notes: string[]) => {
+  const fromEnv = isStringRecord(raw.env_http_headers)
+    ? Object.fromEntries(Object.entries(raw.env_http_headers).map(([name, env]) => [name, `\${${env}}`]))
+    : {};
+  const bearer =
+    typeof raw.bearer_token_env_var === "string"
+      ? { Authorization: `Bearer \${${raw.bearer_token_env_var}}` }
+      : {};
+  const headers = { ...(server.headers as Record<string, string> | undefined), ...fromEnv, ...bearer };
+
+  if (raw.env_http_headers !== undefined) {
+    notes.push(
+      `env_http_headers became \${VAR} headers; pi fails to connect while a variable is unset, Codex left the header out`,
+    );
+  }
+
+  if (Object.keys(headers).length > 0) {
+    server.headers = headers;
+  }
+};
+
+const codexOAuth = (raw: RawServer, server: PiServer, notes: string[]) => {
+  const oauth = isPlainObject(raw.oauth) ? raw.oauth : {};
+  const fields = {
+    clientId: typeof oauth.client_id === "string" ? oauth.client_id : undefined,
+    callbackPort: typeof oauth.callback_port === "number" ? oauth.callback_port : undefined,
+    scope: isStringArray(raw.scopes) ? raw.scopes.join(" ") : undefined,
+  };
+  const kept = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+
+  if (Object.keys(kept).length > 0) {
+    server.oauth = kept;
+  }
+
+  dropUnknown(oauth, ["client_id", "callback_port"], notes, "oauth ");
+};
+
+const codexTools = (raw: RawServer, server: PiServer) => {
+  const enabled = isStringArray(raw.enabled_tools)
+    ? [["*", "hidden"], ...raw.enabled_tools.map((tool) => [tool, "codemode"])]
+    : [];
+  const disabled = isStringArray(raw.disabled_tools)
+    ? raw.disabled_tools.map((tool) => [tool, "hidden"])
+    : [];
+  const exposures = [...enabled, ...disabled];
+
+  if (exposures.length > 0) {
+    server.toolExposure = Object.fromEntries(exposures);
+  }
+};
+
+const convertCodex = (raw: RawServer, notes: string[]): Conversion => {
+  const picked = pick(codexShape(raw));
+
+  if (typeof picked === "string") {
+    return { skip: picked };
+  }
+
+  keepDollars(picked, notes);
+  escapeCommands(picked, notes);
+
+  const http = "url" in picked;
+
+  if (http) {
+    codexHeaders(raw, picked, notes);
+    codexOAuth(raw, picked, notes);
+  }
+
+  if (raw.enabled === false) {
+    picked.enabled = false;
+  }
+
+  if (isFiniteNumber(raw.tool_timeout_sec) && raw.tool_timeout_sec > 0) {
+    picked.timeout = Math.ceil(raw.tool_timeout_sec);
+  }
+
+  codexTools(raw, picked);
+
+  if (!http && raw.env_vars !== undefined) {
+    notes.push("dropped env_vars: pi passes its whole environment to stdio servers");
+  }
+
+  dropUnknown(raw, http ? CODEX_HTTP_KEYS : CODEX_STDIO_KEYS, notes);
+
+  return { server: picked, notes };
+};
+
 const CONVERTERS: Record<Source, (raw: RawServer, notes: string[], context: ConvertContext) => Conversion> = {
   claude: convertClaude,
   cursor: convertCursor,
+  codex: convertCodex,
 };
 
 export const convertServer = (source: Source, raw: unknown, context: ConvertContext): Conversion => {
